@@ -147,6 +147,32 @@ def _validate_config_on_startup(logger):
     else:
         logger.warning("⚠️  image_providers.yaml 不存在，将使用默认配置")
 
+    # 检查 feishu_providers.yaml
+    feishu_config_path = Path(__file__).parent.parent / 'feishu_providers.yaml'
+    if feishu_config_path.exists():
+        try:
+            with open(feishu_config_path, 'r', encoding='utf-8') as f:
+                feishu_config = yaml.safe_load(f) or {}
+            active = feishu_config.get('active_workspace', '未设置')
+            workspaces = list(feishu_config.get('workspaces', {}).keys())
+            logger.info(f"✅ 飞书配置: 激活={active}, 可用工作区={workspaces}")
+
+            # 检查激活的工作区配置
+            if active in feishu_config.get('workspaces', {}):
+                workspace = feishu_config['workspaces'][active]
+                if not workspace.get('app_id'):
+                    logger.warning(f"⚠️  飞书工作区 [{active}] 未配置 app_id")
+                if not workspace.get('app_secret'):
+                    logger.warning(f"⚠️  飞书工作区 [{active}] 未配置 app_secret")
+                if not workspace.get('base_url'):
+                    logger.warning(f"⚠️  飞书工作区 [{active}] 未配置 base_url")
+                else:
+                    logger.info(f"✅ 飞书工作区 [{active}] 已配置")
+        except Exception as e:
+            logger.error(f"❌ 读取 feishu_providers.yaml 失败: {e}")
+    else:
+        logger.info("ℹ️  feishu_providers.yaml 不存在，对标文案查询功能将不可用")
+
     logger.info("✅ 配置检查完成")
 
 

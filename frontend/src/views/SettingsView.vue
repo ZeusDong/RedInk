@@ -64,6 +64,39 @@
           @test="testImageProviderInList"
         />
       </div>
+
+      <!-- 飞书工作区配置 -->
+      <div class="card">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">飞书工作区配置</h2>
+            <p class="section-desc">用于对标文案查询功能</p>
+          </div>
+          <button class="btn btn-small" @click="openFeishuModal">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            配置
+          </button>
+        </div>
+
+        <!-- 飞书配置状态 -->
+        <div class="feishu-status">
+          <div class="status-item">
+            <span class="status-label">工作区数量:</span>
+            <span class="status-value">{{ feishuWorkspaceCount }}</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">当前激活:</span>
+            <span class="status-value">{{ feishuConfig?.active_workspace || '未设置' }}</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">缓存状态:</span>
+            <span class="status-value">{{ feishuCacheEnabled ? '已启用' : '已禁用' }}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 文本服务商弹窗 -->
@@ -92,19 +125,32 @@
       @test="testImageConnection"
       @update:formData="updateImageForm"
     />
+
+    <!-- 飞书配置弹窗 -->
+    <FeishuConfigModal
+      :visible="showFeishuModal"
+      :config="feishuConfig"
+      :testing="testingFeishu"
+      @close="closeFeishuModal"
+      @save="saveFeishuConfig"
+      @test="testFeishuConnection"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import ProviderTable from '../components/settings/ProviderTable.vue'
 import ProviderModal from '../components/settings/ProviderModal.vue'
 import ImageProviderModal from '../components/settings/ImageProviderModal.vue'
+import FeishuConfigModal from '../components/settings/FeishuConfigModal.vue'
 import {
   useProviderForm,
   textTypeOptions,
   imageTypeOptions
 } from '../composables/useProviderForm'
+import type { FeishuConfig } from '@/api'
+import * as referenceApi from '@/api/reference'
 
 /**
  * 系统设置页面
@@ -112,6 +158,7 @@ import {
  * 功能：
  * - 管理文本生成服务商配置
  * - 管理图片生成服务商配置
+ * - 管理飞书工作区配置
  * - 测试 API 连接
  */
 
@@ -162,8 +209,60 @@ const {
   updateImageForm
 } = useProviderForm()
 
+// 飞书配置状态
+const showFeishuModal = ref(false)
+const feishuConfig = ref<FeishuConfig | null>(null)
+const testingFeishu = ref(false)
+
+// 计算属性
+const feishuWorkspaceCount = computed(() => {
+  return feishuConfig.value ? Object.keys(feishuConfig.value.workspaces).length : 0
+})
+
+const feishuCacheEnabled = computed(() => {
+  if (!feishuConfig.value) return false
+  const active = feishuConfig.value.workspaces[feishuConfig.value.active_workspace]
+  return active?.cache_enabled ?? false
+})
+
+// 飞书配置方法
+async function loadFeishuConfig() {
+  const result = await referenceApi.getFeishuConfig()
+  if (result.success && result.config) {
+    feishuConfig.value = result.config
+  }
+}
+
+function openFeishuModal() {
+  showFeishuModal.value = true
+}
+
+function closeFeishuModal() {
+  showFeishuModal.value = false
+}
+
+async function saveFeishuConfig(config: FeishuConfig) {
+  const result = await referenceApi.updateFeishuConfig(config)
+  if (result.success) {
+    feishuConfig.value = config
+    closeFeishuModal()
+  }
+  return result
+}
+
+async function testFeishuConnection(workspaceConfig: any) {
+  testingFeishu.value = true
+  try {
+    const result = await referenceApi.testFeishuConnection(workspaceConfig)
+    return result
+  } finally {
+    testingFeishu.value = false
+  }
+}
+
 onMounted(() => {
   loadConfig()
+  loadFeishuConfig()
 })
 </script>
 
@@ -210,5 +309,31 @@ onMounted(() => {
   justify-content: center;
   padding: 80px 20px;
   color: #666;
+}
+
+/* 飞书状态 */
+.feishu-status {
+  display: flex;
+  gap: 24px;
+  padding: 16px;
+  background: #f9f9f9;
+  border-radius: 8px;
+}
+
+.status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.status-label {
+  font-size: 12px;
+  color: var(--text-sub, #666);
+}
+
+.status-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-main, #1a1a1a);
 }
 </style>

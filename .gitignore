@@ -58,6 +58,7 @@ history/*
 .gemini/
 /image_providers.yaml
 /text_providers.yaml
+/feishu_providers.yaml
 
 # Logs
 *.log
@@ -82,3 +83,38 @@ git-changelog.txt
 
 .claude/
 docs/
+
+reference_cache/
+.cache/
+.temp_cache/
+.idea/
+.vscode/
+*.iml
+*.log
+*.bak
+*.orig
+*.rej
+*.swp
+*~.DS_Store
+Thumbs.db
+*.class
+*.jar
+*.war
+*.ear
+*.db
+*.sqlite3
+*.pid
+*.seed
+*.pid.lock
+*.gz
+*.zip
+*.tar
+*.rar
+*.7z
+*.exe
+*.dll
+*.so
+*.dylib
+*.lib
+*.o
+*.obj

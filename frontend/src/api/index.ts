@@ -794,3 +794,7 @@ export async function generateContent(
   })
   return response.data
 }
+
+// ==================== 对标文案查询 API ====================
+
+export * from './reference'
