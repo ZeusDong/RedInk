@@ -272,3 +272,40 @@ class Config:
         except Exception as e:
             logger.error(f"保存飞书配置失败: {e}")
             raise ValueError(f"保存飞书配置失败: {e}")
+
+    @classmethod
+    def update_feishu_workspace_tokens(cls, workspace_name: str, tokens: dict) -> None:
+        """
+        Update access token and refresh token for a workspace.
+
+        Args:
+            workspace_name: Name of the workspace
+            tokens: Dict containing:
+                - user_access_token: New access token
+                - refresh_token: New refresh token
+                - expires_in: Access token expiry in seconds
+                - refresh_token_expires_in: Refresh token expiry in seconds
+        """
+        from datetime import datetime, timedelta
+
+        config = cls.load_feishu_providers_config()
+
+        if workspace_name not in config.get('workspaces', {}):
+            raise ValueError(f"Workspace {workspace_name} not found")
+
+        workspace = config['workspaces'][workspace_name]
+
+        # Calculate expiry timestamps
+        now = datetime.now()
+        access_token_expiry = now + timedelta(seconds=tokens['expires_in'])
+        refresh_token_expiry = now + timedelta(seconds=tokens['refresh_token_expires_in'])
+
+        # Update tokens
+        workspace['user_access_token'] = tokens['user_access_token']
+        workspace['refresh_token'] = tokens['refresh_token']
+        workspace['token_expires_at'] = access_token_expiry.isoformat()
+        workspace['refresh_token_expires_at'] = refresh_token_expiry.isoformat()
+
+        # Save updated config
+        cls.save_feishu_providers_config(config)
+        logger.info(f"Updated tokens for workspace {workspace_name}, expires at {access_token_expiry}")

@@ -96,6 +96,11 @@ class FeishuService:
         self._workspace_name: str = "default"
         self._tenant_access_token: Optional[str] = None
         self._tenant_token_expiry: Optional[datetime] = None
+        # Add token tracking for user access token refresh
+        self._user_access_token: Optional[str] = None
+        self._user_token_expiry: Optional[datetime] = None
+        self._refresh_token: Optional[str] = None
+        self._refresh_token_expiry: Optional[datetime] = None
 
     def configure(self, workspace_name: str, config: Dict[str, Any]) -> None:
         """
@@ -113,6 +118,11 @@ class FeishuService:
         self._cache_enabled = config.get("cache_enabled", True)
         self._cache_ttl = config.get("cache_ttl", 3600)
 
+        # Load token fields for auto-refresh
+        self._refresh_token = config.get("refresh_token", "")
+        self._user_token_expiry = self._parse_token_expiry(config.get("token_expires_at"))
+        self._refresh_token_expiry = self._parse_token_expiry(config.get("refresh_token_expires_at"))
+
         # Clear cache when configuration changes
         self._cache = None
         self._cache_time = None
@@ -121,6 +131,174 @@ class FeishuService:
         self._tenant_token_expiry = None
 
         logger.info(f"Feishu service configured for workspace: {workspace_name}")
+
+    def _parse_token_expiry(self, expiry_str: Optional[str]) -> Optional[datetime]:
+        """Parse ISO format expiry string to datetime"""
+        if not expiry_str:
+            return None
+        try:
+            return datetime.fromisoformat(expiry_str)
+        except (ValueError, TypeError):
+            return None
+
+    def _get_valid_user_access_token(self) -> str:
+        """
+        Get a valid user access token, refreshing if necessary.
+
+        Returns:
+            str: Valid user access token
+
+        Raises:
+            ValueError: If token cannot be obtained
+        """
+        # Check if we have a valid cached token (refresh 10 minutes before expiry)
+        if self._user_access_token and self._user_token_expiry:
+            if datetime.now() < self._user_token_expiry:
+                logger.debug(f"Using cached user access token (expires at {self._user_token_expiry})")
+                return self._user_access_token
+
+        # Token is expired or missing, try to refresh
+        if not self._refresh_token:
+            raise ValueError(
+                "user_access_token 已过期且未配置 refresh_token。\n"
+                "请重新进行 OAuth 授权以获取 refresh_token。"
+            )
+
+        # Check if refresh token is still valid
+        if self._refresh_token_expiry and datetime.now() >= self._refresh_token_expiry:
+            raise ValueError(
+                "refresh_token 已过期，需要重新授权。\n"
+                "请访问设置页面重新进行飞书授权。"
+            )
+
+        # Refresh the token
+        return self._refresh_user_access_token()
+
+    def _refresh_user_access_token(self) -> str:
+        """
+        Refresh user access token using refresh_token.
+
+        Returns:
+            str: New user access token
+
+        Raises:
+            ValueError: If refresh fails
+            Exception: If API call fails
+        """
+        url = "https://open.feishu.cn/open-apis/authen/v2/oauth/token"
+        payload = {
+            "grant_type": "refresh_token",
+            "client_id": self._app_id,
+            "client_secret": self._app_secret,
+            "refresh_token": self._refresh_token,
+        }
+        headers = {
+            "Content-Type": "application/json; charset=utf-8"
+        }
+
+        try:
+            logger.info("Refreshing user access token...")
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            result = response.json()
+
+            code = result.get("code", -1)
+            if code != 0:
+                error_msg = result.get("error", "unknown error")
+                # Handle specific error codes
+                if code == 20037:  # refresh_token expired
+                    raise ValueError(
+                        "refresh_token 已过期。\n"
+                        "请访问设置页面重新进行飞书授权。"
+                    )
+                elif code in [20064, 20073]:  # refresh_token revoked or already used
+                    raise ValueError(
+                        "refresh_token 已失效。\n"
+                        "请访问设置页面重新进行飞书授权。"
+                    )
+                elif code == 20074:  # refresh not enabled
+                    raise ValueError(
+                        "飞书应用未开启刷新 token 功能。\n"
+                        "请在飞书开发者后台的安全设置中开启刷新开关。"
+                    )
+                else:
+                    raise Exception(f"Failed to refresh token: {error_msg}")
+
+            # Extract new tokens
+            new_access_token = result.get("access_token")
+            new_refresh_token = result.get("refresh_token")
+            expires_in = result.get("expires_in", 7200)
+            refresh_expires_in = result.get("refresh_token_expires_in", 604800)
+
+            if not new_access_token:
+                raise Exception("No access_token in refresh response")
+
+            if not new_refresh_token:
+                logger.warning("No refresh_token in response, offline_access may not be granted")
+
+            # Update local cache
+            self._user_access_token = new_access_token
+            self._user_token_expiry = datetime.now() + timedelta(seconds=expires_in - 600)  # Refresh 10 min early
+            if new_refresh_token:
+                self._refresh_token = new_refresh_token
+                self._refresh_token_expiry = datetime.now() + timedelta(seconds=refresh_expires_in)
+
+            # Update configuration file
+            from backend.config import Config
+            Config.update_feishu_workspace_tokens(self._workspace_name, {
+                'user_access_token': new_access_token,
+                'refresh_token': new_refresh_token or self._refresh_token,
+                'expires_in': expires_in,
+                'refresh_token_expires_in': refresh_expires_in,
+            })
+
+            logger.info(f"Successfully refreshed user access token (expires at {self._user_token_expiry})")
+            return new_access_token
+
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Error refreshing user access token: {e}")
+            raise
+
+    def _handle_token_refresh_error(self, error: Exception) -> Dict[str, Any]:
+        """
+        Convert token refresh errors to user-friendly responses.
+
+        Args:
+            error: The exception that occurred
+
+        Returns:
+            Dict with error information
+        """
+        error_msg = str(error)
+
+        if "refresh_token 已过期" in error_msg or "refresh_token 已失效" in error_msg:
+            return {
+                "success": False,
+                "error": "refresh_token_invalid",
+                "message": "授权已过期，请重新授权",
+                "requires_reauth": True
+            }
+        elif "未开启刷新 token 功能" in error_msg:
+            return {
+                "success": False,
+                "error": "refresh_not_enabled",
+                "message": "飞书应用未开启刷新功能，请联系管理员",
+            }
+        elif "未配置 refresh_token" in error_msg:
+            return {
+                "success": False,
+                "error": "no_refresh_token",
+                "message": "未配置刷新令牌，请先进行OAuth授权",
+                "requires_reauth": True
+            }
+        else:
+            return {
+                "success": False,
+                "error": "token_refresh_failed",
+                "message": f"令牌刷新失败: {error_msg}",
+            }
 
     def _get_tenant_access_token(self) -> str:
         """
@@ -378,8 +556,8 @@ class FeishuService:
             if page_token:
                 params["page_token"] = page_token
 
-            # Get tenant access token for authentication
-            access_token = self._get_tenant_access_token()
+            # Use user access token for user-specific data
+            access_token = self._get_valid_user_access_token()
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json; charset=utf-8"

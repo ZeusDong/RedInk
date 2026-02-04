@@ -102,6 +102,13 @@ def create_reference_blueprint():
 
         except ValueError as e:
             error_msg = str(e)
+            # Check if this is a token refresh error requiring re-auth
+            if "refresh_token" in error_msg or "重新授权" in error_msg:
+                return jsonify({
+                    "success": False,
+                    "error": error_msg,
+                    "requires_reauth": True
+                }), 403  # Forbidden - requires re-authorization
             return jsonify({
                 "success": False,
                 "error": f"参数错误。\n错误详情: {error_msg}"
@@ -148,6 +155,19 @@ def create_reference_blueprint():
                 "record": record.to_dict()
             }), 200
 
+        except ValueError as e:
+            error_msg = str(e)
+            # Check if this is a token refresh error requiring re-auth
+            if "refresh_token" in error_msg or "重新授权" in error_msg:
+                return jsonify({
+                    "success": False,
+                    "error": error_msg,
+                    "requires_reauth": True
+                }), 403  # Forbidden - requires re-authorization
+            return jsonify({
+                "success": False,
+                "error": f"参数错误。\n错误详情: {error_msg}"
+            }), 400
         except Exception as e:
             error_msg = str(e)
             logger.error(f"获取对标文案详情失败: {error_msg}")
@@ -193,6 +213,19 @@ def create_reference_blueprint():
                 "avg_comments": stats.avg_comments
             }), 200
 
+        except ValueError as e:
+            error_msg = str(e)
+            # Check if this is a token refresh error requiring re-auth
+            if "refresh_token" in error_msg or "重新授权" in error_msg:
+                return jsonify({
+                    "success": False,
+                    "error": error_msg,
+                    "requires_reauth": True
+                }), 403  # Forbidden - requires re-authorization
+            return jsonify({
+                "success": False,
+                "error": f"参数错误。\n错误详情: {error_msg}"
+            }), 400
         except Exception as e:
             error_msg = str(e)
             logger.error(f"获取统计信息失败: {error_msg}")
@@ -232,6 +265,19 @@ def create_reference_blueprint():
                 "synced_at": result.get("synced_at")
             }), 200
 
+        except ValueError as e:
+            error_msg = str(e)
+            # Check if this is a token refresh error requiring re-auth
+            if "refresh_token" in error_msg or "重新授权" in error_msg:
+                return jsonify({
+                    "success": False,
+                    "error": error_msg,
+                    "requires_reauth": True
+                }), 403  # Forbidden - requires re-authorization
+            return jsonify({
+                "success": False,
+                "error": f"参数错误。\n错误详情: {error_msg}"
+            }), 400
         except Exception as e:
             error_msg = str(e)
             logger.error(f"同步数据失败: {error_msg}")
@@ -267,6 +313,9 @@ def create_reference_blueprint():
                     "app_secret": "***" if workspace.get("app_secret") else "",
                     "base_url": workspace.get("base_url", ""),
                     "user_access_token": "***" if workspace.get("user_access_token") else "",
+                    "refresh_token": "***" if workspace.get("refresh_token") else "",
+                    "token_expires_at": workspace.get("token_expires_at", ""),
+                    "refresh_token_expires_at": workspace.get("refresh_token_expires_at", ""),
                     "cache_enabled": workspace.get("cache_enabled", True),
                     "cache_ttl": workspace.get("cache_ttl", 3600),
                 }
@@ -313,6 +362,29 @@ def create_reference_blueprint():
                     "error": "参数错误：workspaces 字段不能为空。"
                 }), 400
 
+            # Preserve existing secret values when masked/empty is sent
+            existing_config = Config.load_feishu_providers_config()
+            existing_workspaces = existing_config.get('workspaces', {})
+
+            # Fields that should be preserved when sent as '***' or empty string
+            secret_fields = ['app_secret', 'user_access_token', 'refresh_token',
+                           'token_expires_at', 'refresh_token_expires_at']
+
+            for workspace_name, workspace_data in data.get('workspaces', {}).items():
+                if workspace_name in existing_workspaces:
+                    existing_workspace = existing_workspaces[workspace_name]
+                    for field in secret_fields:
+                        incoming_value = workspace_data.get(field)
+                        # Preserve existing value if:
+                        # 1. Incoming is '***' (masked placeholder)
+                        # 2. Incoming is empty string '' (frontend didn't provide it)
+                        # 3. Incoming is exactly same as existing (no change)
+                        if (incoming_value == '***' or
+                            incoming_value == '' or
+                            (field in existing_workspace and incoming_value == existing_workspace[field])):
+                            if field in existing_workspace:
+                                workspace_data[field] = existing_workspace[field]
+
             # Save configuration
             Config.save_feishu_providers_config(data)
 
@@ -334,7 +406,12 @@ def create_reference_blueprint():
         """
         测试飞书连接
 
-        请求体：
+        请求体（两种模式）：
+
+        模式1 - 使用已保存的工作区配置：
+        - workspace: 工作区名称（将从配置文件读取完整的凭据）
+
+        模式2 - 使用提供的凭据：
         - app_id: 应用 ID
         - app_secret: 应用密钥
         - user_access_token: 用户访问令牌（可选）
@@ -354,6 +431,41 @@ def create_reference_blueprint():
                     "error": "参数错误：请求体不能为空。"
                 }), 400
 
+            # Mode 1: Test using saved workspace config
+            workspace_name = data.get('workspace')
+            if workspace_name:
+                try:
+                    workspace_config = Config.get_feishu_workspace_config(workspace_name)
+
+                    # Use the saved config for testing
+                    service = get_feishu_service()
+                    result = service.test_connection({
+                        "app_id": workspace_config.get("app_id", ""),
+                        "app_secret": workspace_config.get("app_secret", ""),
+                        "user_access_token": workspace_config.get("user_access_token", ""),
+                        "base_url": workspace_config.get("base_url", ""),
+                    })
+
+                    if result.get("success"):
+                        return jsonify({
+                            "success": True,
+                            "message": result.get("message", "连接成功"),
+                            "tables": result.get("tables", []),
+                            "app_token": result.get("app_token", "")
+                        }), 200
+                    else:
+                        return jsonify({
+                            "success": False,
+                            "error": result.get("error", "连接失败")
+                        }), 400
+
+                except Exception as e:
+                    return jsonify({
+                        "success": False,
+                        "error": f"无法加载工作区配置: {str(e)}"
+                    }), 400
+
+            # Mode 2: Test using provided credentials
             app_id = data.get('app_id')
             app_secret = data.get('app_secret')
             user_access_token = data.get('user_access_token', '')
@@ -362,7 +474,7 @@ def create_reference_blueprint():
             if not app_id or not app_secret or not base_url:
                 return jsonify({
                     "success": False,
-                    "error": "参数错误：app_id、app_secret 和 base_url 不能为空。"
+                    "error": "参数错误：请提供 workspace 参数或完整的凭据信息（app_id、app_secret、base_url）。"
                 }), 400
 
             # Test connection

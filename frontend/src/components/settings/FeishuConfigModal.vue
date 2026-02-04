@@ -76,15 +76,31 @@
               </div>
 
               <div class="form-group">
-                <label class="form-label">User Access Token (可选)</label>
-                <input
-                  v-model="currentWorkspace.user_access_token"
-                  type="password"
-                  class="form-input"
-                  placeholder="用户访问令牌"
-                  show-password
-                />
-                <p class="form-hint">用于某些需要用户身份的 API 操作</p>
+                <label class="form-label">用户访问令牌</label>
+                <div class="token-input-group">
+                  <input
+                    v-model="currentWorkspace.user_access_token"
+                    type="password"
+                    class="form-input"
+                    placeholder="点击下方按钮授权获取"
+                    :disabled="isTokenValid"
+                  />
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                    @click="startOAuthFlow"
+                    :disabled="!currentWorkspace?.app_id || !currentWorkspace?.app_secret"
+                  >
+                    授权获取
+                  </button>
+                </div>
+                <small v-if="tokenExpiry" class="text-success">
+                  ✓ 令牌有效期至: {{ formatExpiry(tokenExpiry) }}
+                </small>
+                <small v-else-if="currentWorkspace?.user_access_token" class="text-warning">
+                  ⚠️ 令牌状态未知，建议重新授权
+                </small>
+                <p v-else class="form-hint">通过 OAuth 授权自动获取，支持自动刷新</p>
               </div>
 
               <div class="form-row">
@@ -151,7 +167,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import type { FeishuConfig, FeishuWorkspace } from '@/api'
 
 /**
@@ -187,6 +203,21 @@ const currentWorkspace = computed<FeishuWorkspace | null>(() => {
   return workspace || null
 })
 
+// 当前工作区名称
+const currentWorkspaceName = computed(() => activeWorkspace.value)
+
+// 令牌过期时间
+const tokenExpiry = computed(() => {
+  if (!currentWorkspace.value?.token_expires_at) return null
+  return new Date(currentWorkspace.value.token_expires_at)
+})
+
+// 令牌是否有效
+const isTokenValid = computed(() => {
+  if (!tokenExpiry.value) return false
+  return tokenExpiry.value > new Date()
+})
+
 // 是否可以测试
 const canTest = computed(() => {
   const ws = currentWorkspace.value
@@ -215,16 +246,55 @@ watch(activeWorkspace, () => {
   testResult.value = null
 })
 
+// OAuth 回调处理
+const handleOAuthMessage = (event: MessageEvent) => {
+  // 验证消息来源
+  if (event.origin !== window.location.origin) return
+
+  const { type, error, workspace, hasRefreshToken } = event.data
+
+  if (type === 'feishu:oauth:success') {
+    console.log('OAuth 授权成功:', { workspace, hasRefreshToken })
+    // 刷新配置以获取新的 token
+    window.location.reload()
+  } else if (type === 'feishu:oauth:error') {
+    console.error('OAuth 授权失败:', error)
+    alert(`授权失败: ${error}`)
+  }
+}
+
+// 组件挂载时添加消息监听器
+onMounted(() => {
+  window.addEventListener('message', handleOAuthMessage)
+})
+
+// 组件卸载时移除消息监听器
+onUnmounted(() => {
+  window.removeEventListener('message', handleOAuthMessage)
+})
+
+// 启动 OAuth 流程
+const startOAuthFlow = () => {
+  const frontendOrigin = window.location.origin
+  const workspace = currentWorkspaceName.value || 'default'
+  const authUrl = `/api/oauth/authorize?workspace=${encodeURIComponent(workspace)}&frontend_origin=${encodeURIComponent(frontendOrigin)}`
+  window.open(authUrl, 'feishu-oauth', 'width=600,height=700')
+}
+
+// 格式化过期时间
+const formatExpiry = (date: Date) => {
+  return date.toLocaleString('zh-CN')
+}
+
 // 测试连接
 async function handleTest() {
   if (!currentWorkspace.value || !canTest.value) return
 
   testResult.value = null
+  // 发送工作区名称，让后端使用已保存的配置进行测试
+  // 这样可以避免发送被脱敏的 '***' 值
   const result = await emit('test', {
-    app_id: currentWorkspace.value.app_id,
-    app_secret: currentWorkspace.value.app_secret,
-    user_access_token: currentWorkspace.value.user_access_token,
-    base_url: currentWorkspace.value.base_url
+    workspace: activeWorkspace.value
   })
   // 注意：这里假设 emit 返回 Promise，实际上需要通过 props.testing 来处理
 }
@@ -251,6 +321,11 @@ watch(() => props.testing, (isTesting) => {
 defineExpose({
   setTestResult(result: any) {
     testResult.value = result
+  },
+  // 暴露刷新配置的方法，用于 OAuth 回调后更新
+  async refreshConfig() {
+    // 通知父组件重新加载配置
+    window.location.reload()
   }
 })
 </script>
@@ -398,6 +473,36 @@ defineExpose({
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+}
+
+/* Token input group with authorize button */
+.token-input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.token-input-group .form-input {
+  flex: 1;
+}
+
+.token-input-group .btn-secondary {
+  white-space: nowrap;
+  padding: 10px 16px;
+}
+
+/* Token status indicators */
+.text-success {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #52c41a;
+}
+
+.text-warning {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #faad14;
 }
 
 /* 测试按钮 */

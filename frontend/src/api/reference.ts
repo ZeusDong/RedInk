@@ -111,6 +111,9 @@ export interface FeishuWorkspace {
   app_secret: string
   base_url: string
   user_access_token: string
+  refresh_token?: string
+  token_expires_at?: string
+  refresh_token_expires_at?: string
   cache_enabled: boolean
   cache_ttl: number
 }
@@ -483,6 +486,7 @@ export async function testFeishuConnection(
       message: string
       tables: string[]
       app_token: string
+      error?: string
     }>(
       `${API_BASE_URL}/reference/config/test`,
       config,

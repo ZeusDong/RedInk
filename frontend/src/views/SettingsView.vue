@@ -128,6 +128,7 @@
 
     <!-- 飞书配置弹窗 -->
     <FeishuConfigModal
+      ref="feishuModalRef"
       :visible="showFeishuModal"
       :config="feishuConfig"
       :testing="testingFeishu"
@@ -213,6 +214,7 @@ const {
 const showFeishuModal = ref(false)
 const feishuConfig = ref<FeishuConfig | null>(null)
 const testingFeishu = ref(false)
+const feishuModalRef = ref<InstanceType<typeof FeishuConfigModal> | null>(null)
 
 // 计算属性
 const feishuWorkspaceCount = computed(() => {
@@ -254,6 +256,8 @@ async function testFeishuConnection(workspaceConfig: any) {
   testingFeishu.value = true
   try {
     const result = await referenceApi.testFeishuConnection(workspaceConfig)
+    // 通过模板 ref 调用子组件的方法来设置测试结果
+    feishuModalRef.value?.setTestResult(result)
     return result
   } finally {
     testingFeishu.value = false
