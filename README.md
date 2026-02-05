@@ -1,21 +1,5 @@
 <div align="center">
 
-<img src="images/2.png" alt="红墨 - 灵感一触即发 让创作从未如此简单" width="600"/>
-
-## 红墨官方站点上线啦，注册即送50体验积分！
-
-## 注册需要邀请码！可以到 https://watcha.cn/square/discuss#post_id=1380 获取
-
-<div align="center">
-<a href="https://redink.top">
-  <img src="images/redink.png" alt="红墨在线体验" width="500" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"/>
-</a>
-
-#### [点击访问在线体验站 → Redink.top](https://redink.top)
-
-
-</div>
-
 <img src="images/showcase-grid.png" alt="使用红墨生成的各类小红书封面" width="700" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.12);"/>
 
 <sub>*使用红墨生成的各类小红书封面 - AI驱动，风格统一，文字准确*</sub>

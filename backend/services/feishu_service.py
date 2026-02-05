@@ -969,6 +969,150 @@ class FeishuService:
                 "error": str(e)
             }
 
+    def test_fetch_records(
+        self,
+        workspace_name: str,
+        config: Dict[str, Any],
+        sample_count: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Test fetch records from a Feishu Bitable and save to independent cache file.
+
+        This method is used to quickly test a new Bitable configuration and verify
+        data structure and field mapping.
+
+        Args:
+            workspace_name: Name of the workspace configuration to test
+            config: Configuration dict containing app_id, app_secret, etc.
+            sample_count: Number of sample records to return in response
+
+        Returns:
+            Dict with fetch result including:
+            - success: bool
+            - message: str
+            - data: dict with workspace, app_token, table_name, total_records,
+                    fetch_time_ms, cached_at, cache_file, sample_records
+        """
+        start_time = time.time()
+
+        try:
+            # Save current configuration
+            old_config = {
+                "_workspace_name": getattr(self, "_workspace_name", None),
+                "_app_id": getattr(self, "_app_id", None),
+                "_app_secret": getattr(self, "_app_secret", None),
+                "_user_access_token": getattr(self, "_user_access_token", None),
+                "_refresh_token": getattr(self, "_refresh_token", None),
+                "_base_url": getattr(self, "_base_url", None),
+                "_cache_enabled": getattr(self, "_cache_enabled", None),
+                "_cache_ttl": getattr(self, "_cache_ttl", None),
+            }
+
+            # Configure with test workspace
+            self.configure(workspace_name, config)
+
+            # Parse base URL to get app_token and table info
+            bitable_params = self._parse_base_url()
+            app_token = bitable_params.app_token
+
+            # Get table name for better identification
+            tables = self._list_tables(app_token)
+            table_name = "Unknown"
+            table_id = bitable_params.table_id
+
+            if tables:
+                if table_id:
+                    # Find table by ID
+                    for table in tables:
+                        if table.get("table_id") == table_id:
+                            table_name = table.get("name", "Unknown")
+                            break
+                else:
+                    # Use first table name
+                    table_name = tables[0].get("name", "Unknown")
+
+            # Fetch all records
+            logger.info(f"Fetching records from workspace '{workspace_name}' (table: {table_name})...")
+            raw_records = self._fetch_all_records()
+
+            fetch_time = int((time.time() - start_time) * 1000)
+            cache_time = datetime.now()
+
+            # Save to independent test cache file
+            cache_file = CACHE_DIR / f"test_{workspace_name}_cache.json"
+            cache_data = {
+                "cached_at": cache_time.isoformat(),
+                "workspace": workspace_name,
+                "app_token": app_token,
+                "table_name": table_name,
+                "table_id": table_id,
+                "total": len(raw_records),
+                "fetch_time_ms": fetch_time,
+                "records": raw_records
+            }
+
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=2)
+
+            logger.info(f"Saved {len(raw_records)} records to test cache: {cache_file}")
+
+            # Transform sample records to ReferenceRecord format
+            sample_count = min(sample_count, len(raw_records))
+            sample_records = []
+            for i in range(sample_count):
+                try:
+                    record = transform_feishu_record(raw_records[i])
+                    sample_records.append(record.to_dict())
+                except Exception as e:
+                    logger.warning(f"Failed to transform sample record {i}: {e}")
+
+            # Restore original configuration
+            for key, value in old_config.items():
+                if value is not None:
+                    setattr(self, key[1:], value)
+
+            return {
+                "success": True,
+                "message": f"成功采集 {len(raw_records)} 条记录",
+                "data": {
+                    "workspace": workspace_name,
+                    "app_token": app_token,
+                    "table_name": table_name,
+                    "table_id": table_id,
+                    "total_records": len(raw_records),
+                    "fetch_time_ms": fetch_time,
+                    "cached_at": cache_time.isoformat(),
+                    "cache_file": str(cache_file),
+                    "sample_records": sample_records
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Test fetch records failed: {e}")
+
+            # Try to restore original configuration
+            try:
+                old_config = {
+                    "_workspace_name": getattr(self, "_workspace_name", None),
+                    "_app_id": getattr(self, "_app_id", None),
+                    "_app_secret": getattr(self, "_app_secret", None),
+                    "_user_access_token": getattr(self, "_user_access_token", None),
+                    "_refresh_token": getattr(self, "_refresh_token", None),
+                    "_base_url": getattr(self, "_base_url", None),
+                    "_cache_enabled": getattr(self, "_cache_enabled", None),
+                    "_cache_ttl": getattr(self, "_cache_ttl", None),
+                }
+                for key, value in old_config.items():
+                    if value is not None:
+                        setattr(self, key[1:], value)
+            except Exception:
+                pass
+
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
 
 # Singleton instance getter
 def get_feishu_service() -> FeishuService:

@@ -79,6 +79,7 @@ def create_reference_blueprint():
             service.configure(workspace_name, workspace_config)
 
             # Query records
+            logger.info(f"Querying records with params: page={page}, page_size={page_size}, keyword={keyword}")
             result = service.list_records(
                 page=page,
                 page_size=page_size,
@@ -91,14 +92,25 @@ def create_reference_blueprint():
                 sort_order=sort_order
             )
 
-            return jsonify({
+            logger.info(f"Query result: {len(result.records)} records, total={result.total}")
+            records_dict = [r.to_dict() for r in result.records]
+            logger.info(f"Serialized {len(records_dict)} records to dict")
+
+            response_data = {
                 "success": True,
-                "records": [r.to_dict() for r in result.records],
+                "records": records_dict,
                 "total": result.total,
                 "page": result.page,
                 "page_size": result.page_size,
                 "has_more": result.has_more
-            }), 200
+            }
+
+            # Log the actual JSON response size
+            import json
+            json_str = json.dumps(response_data, ensure_ascii=False)
+            logger.info(f"Response JSON size: {len(json_str)} bytes, records count: {len(response_data['records'])}")
+
+            return jsonify(response_data), 200
 
         except ValueError as e:
             error_msg = str(e)
@@ -202,6 +214,8 @@ def create_reference_blueprint():
             service.configure(workspace_name, workspace_config)
 
             stats = service.get_statistics()
+
+            logger.info(f"Statistics: total_records={stats.total_records}, industries={len(stats.industry_distribution)}")
 
             return jsonify({
                 "success": True,

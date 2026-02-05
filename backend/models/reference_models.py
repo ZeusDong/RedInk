@@ -220,14 +220,22 @@ def transform_feishu_record(feishu_record: Dict[str, Any]) -> ReferenceRecord:
 
 
 def _get_field_value(fields: Dict[str, Any], key: str, default: Any = "") -> Any:
-    """Get field value from Feishu fields dict."""
+    """Get field value from Feishu fields dict.
+
+    Feishu returns text fields as: [{"text": "value", "type": "text"}]
+    This function extracts the actual text value from that structure.
+    """
     if key in fields:
         value = fields[key]
         if value is None:
             return default
         # Feishu may return values as list with single element
         if isinstance(value, list) and len(value) > 0:
-            return value[0]
+            first_element = value[0]
+            # If first element is a dict with "text" key, extract the text value
+            if isinstance(first_element, dict) and "text" in first_element:
+                return first_element["text"]
+            return first_element
         return value
     return default
 

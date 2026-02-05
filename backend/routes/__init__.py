@@ -8,6 +8,7 @@ API 路由模块
 - config_routes: 配置管理 API
 - content_routes: 内容生成相关 API（标题、文案、标签）
 - reference_routes: 对标文案查询相关 API
+- reference_test_routes: 测试接口相关 API
 - oauth_routes: OAuth 授权相关 API
 
 所有路由都注册到统一的 /api 前缀下
@@ -31,6 +32,7 @@ def create_api_blueprint():
     from .config_routes import create_config_blueprint
     from .content_routes import create_content_blueprint
     from .reference_routes import create_reference_blueprint
+    from .reference_test_routes import create_reference_test_blueprint
     from .oauth_routes import create_oauth_blueprint
 
     # 创建主 API 蓝图
@@ -43,6 +45,7 @@ def create_api_blueprint():
     api_bp.register_blueprint(create_config_blueprint())
     api_bp.register_blueprint(create_content_blueprint())
     api_bp.register_blueprint(create_reference_blueprint())
+    api_bp.register_blueprint(create_reference_test_blueprint())
     api_bp.register_blueprint(create_oauth_blueprint())
 
     return api_bp

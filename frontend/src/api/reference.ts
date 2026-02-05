@@ -139,6 +139,10 @@ export interface FeishuConfig {
 export async function getReferenceRecords(
   params: ReferenceQueryParams = {}
 ): Promise<ReferenceQueryResult> {
+  console.log('[Reference API] === getReferenceRecords START ===')
+  console.log('[Reference API] AXIOS INSTANCE:', axios)
+  console.log('[Reference API] AXIOS DEFAULTS:', axios.defaults)
+  console.log('[Reference API] getReferenceRecords called with params:', params)
   try {
     const queryParams: Record<string, any> = {
       page: params.page || 1,
@@ -153,6 +157,12 @@ export async function getReferenceRecords(
     if (params.sort_by) queryParams.sort_by = params.sort_by
     if (params.sort_order) queryParams.sort_order = params.sort_order
 
+    const requestUrl = `${API_BASE_URL}/reference/records`
+    console.log('[Reference API] Making GET request to:', requestUrl)
+    console.log('[Reference API] Full URL will be:', window.location.origin + requestUrl)
+    console.log('[Reference API] Query params:', queryParams)
+    console.log('[Reference API] About to call axios.get...')
+
     const response = await axios.get<{ success: boolean; records: ReferenceRecord[]; total: number; page: number; page_size: number; has_more: boolean }>(
       `${API_BASE_URL}/reference/records`,
       {
@@ -161,7 +171,26 @@ export async function getReferenceRecords(
       }
     )
 
-    return {
+    console.log('[Reference API] ====== axios.get RETURNED ======')
+    console.log('[Reference API] Response object:', response)
+    console.log('[Reference API] Response received from:', response.config?.url)
+
+    // Debug: Log raw response
+    console.log('[Reference API] Raw response status:', response.status)
+    console.log('[Reference API] Response headers:', response.headers)
+    console.log('[Reference API] Response data:', response.data)
+    console.log('[Reference API] Response data type:', typeof response.data)
+    console.log('[Reference API] Records array:', response.data.records)
+    console.log('[Reference API] Records type:', typeof response.data.records)
+    console.log('[Reference API] Records length:', response.data.records?.length)
+    console.log('[Reference API] Total:', response.data.total)
+
+    // Deep inspection of first record if available
+    if (response.data.records && response.data.records.length > 0) {
+      console.log('[Reference API] First record:', response.data.records[0])
+    }
+
+    const result = {
       success: response.data.success,
       records: response.data.records || [],
       total: response.data.total || 0,
@@ -169,6 +198,10 @@ export async function getReferenceRecords(
       page_size: response.data.page_size || 20,
       has_more: response.data.has_more || false
     }
+
+    console.log('[Reference API] Returning result:', result)
+    console.log('[Reference API] Result records count:', result.records.length)
+    return result
   } catch (error: any) {
     if (axios.isAxiosError(error)) {
       if (error.code === 'ECONNABORTED') {
@@ -261,7 +294,9 @@ export async function getReferenceRecord(
  * @returns Promise 包含统计数据
  */
 export async function getReferenceStats(): Promise<ReferenceStats> {
+  console.log('[Reference API] getReferenceStats called')
   try {
+    console.log('[Reference API] Making GET request to:', `${API_BASE_URL}/reference/stats`)
     const response = await axios.get<{
       success: boolean
       total_records: number
@@ -277,7 +312,11 @@ export async function getReferenceStats(): Promise<ReferenceStats> {
       }
     )
 
-    return {
+    // Debug: Log raw response
+    console.log('[Reference API] Stats response status:', response.status)
+    console.log('[Reference API] Stats response data:', response.data)
+
+    const result = {
       success: response.data.success,
       total_records: response.data.total_records || 0,
       industry_distribution: response.data.industry_distribution || {},
@@ -286,6 +325,9 @@ export async function getReferenceStats(): Promise<ReferenceStats> {
       avg_saves: response.data.avg_saves || 0,
       avg_comments: response.data.avg_comments || 0
     }
+
+    console.log('[Reference API] Returning stats result:', result)
+    return result
   } catch (error: any) {
     if (axios.isAxiosError(error)) {
       if (error.code === 'ECONNABORTED') {

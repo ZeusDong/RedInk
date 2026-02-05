@@ -29,8 +29,8 @@
         <div style="display: flex; align-items: center; gap: 10px;">
           <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--primary) 0%, #ff6b6b 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 14px;">墨</div>
           <div>
-            <div style="font-size: 14px; font-weight: 600;">默子</div>
-            <div style="font-size: 12px; color: var(--text-sub);">mozi</div>
+            <div style="font-size: 14px; font-weight: 600;">哲鸪</div>
+            <div style="font-size: 12px; color: var(--text-sub);">Ether</div>
           </div>
         </div>
       </div>
