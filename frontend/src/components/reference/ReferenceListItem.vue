@@ -37,7 +37,13 @@
       </div>
 
       <!-- 标签行 -->
-      <div class="item-tags" v-if="record.tags && record.tags.length">
+      <div class="item-tags" v-if="record.tags && record.tags.length || (record.keyword && mode === 'search') || (isBenchmarkMode && hasTargetFlag)">
+        <span v-if="record.keyword && mode === 'search'" class="inline-tag keyword">
+          🔍 {{ record.keyword }}
+        </span>
+        <span v-else-if="isBenchmarkMode && hasTargetFlag" class="inline-tag target">
+          待二创
+        </span>
         <span class="tag" v-for="tag in record.tags.slice(0, 5)" :key="tag">
           #{{ tag }}
         </span>
@@ -112,6 +118,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { ReferenceRecord } from '@/api'
 
 /**
@@ -121,14 +128,28 @@ import type { ReferenceRecord } from '@/api'
  */
 
 // 定义 Props
-defineProps<{
+const props = defineProps<{
   record: ReferenceRecord
+  mode?: 'benchmark' | 'search'
 }>()
 
 // 定义 Emits
 defineEmits<{
   (e: 'detail', id: string): void
 }>()
+
+const isBenchmarkMode = computed(() => props.mode === 'benchmark')
+
+// Type-safe access to mode-specific field
+const hasTargetFlag = computed(() => {
+  if (isBenchmarkMode.value) {
+    // For benchmark mode, check if record has target flag
+    // Note: This field comes from Feishu data transformation
+    const record = props.record as ReferenceRecord & { is_target_for_creation?: boolean }
+    return record.is_target_for_creation === true
+  }
+  return false
+})
 
 /**
  * 格式化粉丝数
@@ -282,8 +303,21 @@ function formatTime(dateStr: string | null): string {
 .item-tags {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+}
+
+.inline-tag {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.inline-tag.target {
+  background: linear-gradient(135deg, rgba(255, 36, 66, 0.1), rgba(255, 107, 107, 0.1));
+  color: var(--primary, #ff2442);
 }
 
 .tag {

@@ -17,6 +17,63 @@
 
           <!-- 弹窗内容 -->
           <div class="modal-content">
+            <!-- Global OAuth Settings (新格式) -->
+            <div v-if="hasGlobalOAuth" class="form-section oauth-section">
+              <h3 class="section-title">全局 OAuth 配置</h3>
+              <p class="form-hint oauth-hint">OAuth 凭据在所有工作区间共享，在一处管理即可</p>
+
+              <div class="form-group">
+                <label class="form-label">App ID</label>
+                <input
+                  v-model="localConfig!.oauth!.app_id"
+                  type="text"
+                  class="form-input"
+                  placeholder="cli_xxxxxxxxxxxxx"
+                />
+                <p class="form-hint">应用唯一标识，可在飞书开放平台获取</p>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">App Secret</label>
+                <input
+                  v-model="localConfig!.oauth!.app_secret"
+                  type="password"
+                  class="form-input"
+                  placeholder="应用密钥"
+                  show-password
+                />
+                <p class="form-hint">应用密钥，可在飞书开放平台获取</p>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">用户访问令牌</label>
+                <div class="token-input-group">
+                  <input
+                    v-model="localConfig!.oauth!.user_access_token"
+                    type="password"
+                    class="form-input"
+                    placeholder="点击下方按钮授权获取"
+                    :disabled="isTokenValid"
+                  />
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                    @click="startOAuthFlow"
+                    :disabled="!localConfig?.oauth?.app_id || !localConfig?.oauth?.app_secret"
+                  >
+                    授权获取
+                  </button>
+                </div>
+                <small v-if="globalTokenExpiry" class="text-success">
+                  ✓ 令牌有效期至: {{ formatExpiry(globalTokenExpiry) }}
+                </small>
+                <small v-else-if="localConfig?.oauth?.user_access_token" class="text-warning">
+                  ⚠️ 令牌状态未知，建议重新授权
+                </small>
+                <p v-else class="form-hint">通过 OAuth 授权自动获取，支持自动刷新</p>
+              </div>
+            </div>
+
             <!-- 工作区选择 -->
             <div class="form-section">
               <label class="form-label">激活工作区</label>
@@ -29,7 +86,9 @@
 
             <!-- 当前工作区配置 -->
             <div v-if="currentWorkspace" class="form-section">
-              <h3 class="section-title">当前工作区配置</h3>
+              <h3 class="section-title">
+                {{ hasGlobalOAuth ? '工作区设置' : '当前工作区配置' }}
+              </h3>
 
               <div class="form-group">
                 <label class="form-label">工作区名称</label>
@@ -41,28 +100,59 @@
                 />
               </div>
 
-              <div class="form-group">
-                <label class="form-label">App ID</label>
-                <input
-                  v-model="currentWorkspace.app_id"
-                  type="text"
-                  class="form-input"
-                  placeholder="cli_xxxxxxxxxxxxx"
-                />
-                <p class="form-hint">应用唯一标识，可在飞书开放平台获取</p>
-              </div>
+              <!-- 旧格式：显示工作区级别的 OAuth 字段 -->
+              <template v-if="!hasGlobalOAuth">
+                <div class="form-group">
+                  <label class="form-label">App ID</label>
+                  <input
+                    v-model="currentWorkspace.app_id"
+                    type="text"
+                    class="form-input"
+                    placeholder="cli_xxxxxxxxxxxxx"
+                  />
+                  <p class="form-hint">应用唯一标识，可在飞书开放平台获取</p>
+                </div>
 
-              <div class="form-group">
-                <label class="form-label">App Secret</label>
-                <input
-                  v-model="currentWorkspace.app_secret"
-                  type="password"
-                  class="form-input"
-                  placeholder="应用密钥"
-                  show-password
-                />
-                <p class="form-hint">应用密钥，可在飞书开放平台获取</p>
-              </div>
+                <div class="form-group">
+                  <label class="form-label">App Secret</label>
+                  <input
+                    v-model="currentWorkspace.app_secret"
+                    type="password"
+                    class="form-input"
+                    placeholder="应用密钥"
+                    show-password
+                  />
+                  <p class="form-hint">应用密钥，可在飞书开放平台获取</p>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">用户访问令牌</label>
+                  <div class="token-input-group">
+                    <input
+                      v-model="currentWorkspace.user_access_token"
+                      type="password"
+                      class="form-input"
+                      placeholder="点击下方按钮授权获取"
+                      :disabled="isTokenValid"
+                    />
+                    <button
+                      type="button"
+                      class="btn-secondary"
+                      @click="startOAuthFlow"
+                      :disabled="!currentWorkspace?.app_id || !currentWorkspace?.app_secret"
+                    >
+                      授权获取
+                    </button>
+                  </div>
+                  <small v-if="tokenExpiry && !globalTokenExpiry" class="text-success">
+                    ✓ 令牌有效期至: {{ formatExpiry(tokenExpiry) }}
+                  </small>
+                  <small v-else-if="currentWorkspace?.user_access_token" class="text-warning">
+                    ⚠️ 令牌状态未知，建议重新授权
+                  </small>
+                  <p v-else class="form-hint">通过 OAuth 授权自动获取，支持自动刷新</p>
+                </div>
+              </template>
 
               <div class="form-group">
                 <label class="form-label">多维表格 URL</label>
@@ -73,34 +163,6 @@
                   placeholder="https://xxx.feishu.cn/base/xxxxxx"
                 />
                 <p class="form-hint">飞书多维表格的完整 URL</p>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">用户访问令牌</label>
-                <div class="token-input-group">
-                  <input
-                    v-model="currentWorkspace.user_access_token"
-                    type="password"
-                    class="form-input"
-                    placeholder="点击下方按钮授权获取"
-                    :disabled="isTokenValid"
-                  />
-                  <button
-                    type="button"
-                    class="btn-secondary"
-                    @click="startOAuthFlow"
-                    :disabled="!currentWorkspace?.app_id || !currentWorkspace?.app_secret"
-                  >
-                    授权获取
-                  </button>
-                </div>
-                <small v-if="tokenExpiry" class="text-success">
-                  ✓ 令牌有效期至: {{ formatExpiry(tokenExpiry) }}
-                </small>
-                <small v-else-if="currentWorkspace?.user_access_token" class="text-warning">
-                  ⚠️ 令牌状态未知，建议重新授权
-                </small>
-                <p v-else class="form-hint">通过 OAuth 授权自动获取，支持自动刷新</p>
               </div>
 
               <div class="form-row">
@@ -174,6 +236,9 @@ import type { FeishuConfig, FeishuWorkspace } from '@/api'
  * 飞书配置弹窗组件
  *
  * 用于配置飞书工作区连接信息
+ * 支持两种格式：
+ * 1. 新格式：全局 OAuth + 工作区特定配置
+ * 2. 旧格式：每个工作区包含完整配置（向后兼容）
  */
 
 // 定义 Props
@@ -195,6 +260,11 @@ const activeWorkspace = ref<string>(props.config?.active_workspace || 'default')
 const localConfig = ref<FeishuConfig | null>(null)
 const testResult = ref<{ success: boolean; message?: string; error?: string; tables?: string[] } | null>(null)
 
+// 是否使用新格式（全局 OAuth）
+const hasGlobalOAuth = computed(() => {
+  return localConfig.value && 'oauth' in localConfig.value && !!localConfig.value.oauth
+})
+
 // 当前工作区配置
 const currentWorkspace = computed<FeishuWorkspace | null>(() => {
   if (!localConfig.value) return null
@@ -206,8 +276,17 @@ const currentWorkspace = computed<FeishuWorkspace | null>(() => {
 // 当前工作区名称
 const currentWorkspaceName = computed(() => activeWorkspace.value)
 
-// 令牌过期时间
+// 全局 OAuth 令牌过期时间（新格式）
+const globalTokenExpiry = computed(() => {
+  if (!localConfig.value?.oauth?.token_expires_at) return null
+  return new Date(localConfig.value.oauth.token_expires_at)
+})
+
+// 工作区令牌过期时间（旧格式）
 const tokenExpiry = computed(() => {
+  // 优先使用全局 OAuth 的过期时间
+  if (globalTokenExpiry.value) return globalTokenExpiry.value
+  // 旧格式：使用工作区级别的过期时间
   if (!currentWorkspace.value?.token_expires_at) return null
   return new Date(currentWorkspace.value.token_expires_at)
 })
@@ -220,8 +299,16 @@ const isTokenValid = computed(() => {
 
 // 是否可以测试
 const canTest = computed(() => {
-  const ws = currentWorkspace.value
-  return ws && ws.app_id && ws.app_secret && ws.base_url
+  if (hasGlobalOAuth.value) {
+    // 新格式：检查全局 OAuth 和当前工作区的 base_url
+    const oauth = localConfig.value?.oauth
+    const ws = currentWorkspace.value
+    return oauth && oauth.app_id && oauth.app_secret && ws && ws.base_url
+  } else {
+    // 旧格式：检查工作区级别的所有字段
+    const ws = currentWorkspace.value
+    return ws && ws.app_id && ws.app_secret && ws.base_url
+  }
 })
 
 // 是否可以保存
@@ -235,7 +322,9 @@ watch(() => props.config, (newConfig) => {
     // 深拷贝配置，避免直接修改 props
     localConfig.value = {
       active_workspace: newConfig.active_workspace,
-      workspaces: JSON.parse(JSON.stringify(newConfig.workspaces))
+      workspaces: JSON.parse(JSON.stringify(newConfig.workspaces)),
+      // 保留全局 OAuth 配置（如果有）
+      ...(newConfig.oauth && { oauth: { ...newConfig.oauth } })
     }
     activeWorkspace.value = newConfig.active_workspace
   }
@@ -287,16 +376,15 @@ const formatExpiry = (date: Date) => {
 }
 
 // 测试连接
-async function handleTest() {
+function handleTest() {
   if (!currentWorkspace.value || !canTest.value) return
 
   testResult.value = null
   // 发送工作区名称，让后端使用已保存的配置进行测试
   // 这样可以避免发送被脱敏的 '***' 值
-  const result = await emit('test', {
+  emit('test', {
     workspace: activeWorkspace.value
   })
-  // 注意：这里假设 emit 返回 Promise，实际上需要通过 props.testing 来处理
 }
 
 // 保存配置
@@ -430,6 +518,19 @@ defineExpose({
 /* 表单 */
 .form-section {
   margin-bottom: 24px;
+}
+
+.oauth-section {
+  background: #f8f9fa;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.oauth-hint {
+  margin-bottom: 16px;
+  color: var(--text-sub, #666);
+  font-size: 13px;
 }
 
 .form-label {

@@ -18,6 +18,14 @@
         </svg>
       </div>
 
+      <!-- Mode-specific badges -->
+      <div v-if="record.keyword && mode === 'search'" class="keyword-badge">
+        🔍 {{ record.keyword }}
+      </div>
+      <div v-else-if="isBenchmarkMode && hasTargetFlag" class="target-badge">
+        待二创
+      </div>
+
       <!-- 悬浮操作按钮 -->
       <div class="card-overlay">
         <button class="overlay-btn" @click.stop="$emit('detail', record.record_id)">
@@ -93,6 +101,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { ReferenceRecord } from '@/api'
 
 /**
@@ -102,14 +111,28 @@ import type { ReferenceRecord } from '@/api'
  */
 
 // 定义 Props
-defineProps<{
+const props = defineProps<{
   record: ReferenceRecord
+  mode?: 'benchmark' | 'search'
 }>()
 
 // 定义 Emits
 defineEmits<{
   (e: 'detail', id: string): void
 }>()
+
+const isBenchmarkMode = computed(() => props.mode === 'benchmark')
+
+// Type-safe access to mode-specific field
+const hasTargetFlag = computed(() => {
+  if (isBenchmarkMode.value) {
+    // For benchmark mode, check if record has target flag
+    // Note: This field comes from Feishu data transformation
+    const record = props.record as ReferenceRecord & { is_target_for_creation?: boolean }
+    return record.is_target_for_creation === true
+  }
+  return false
+})
 
 /**
  * 格式化粉丝数
@@ -159,6 +182,29 @@ function formatMetric(count: number): string {
   background: #f7f7f7;
   position: relative;
   overflow: hidden;
+}
+
+/* Mode-specific badges */
+.keyword-badge,
+.target-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  backdrop-filter: blur(4px);
+}
+
+.keyword-badge {
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+}
+
+.target-badge {
+  background: rgba(255, 36, 66, 0.9);
+  color: white;
 }
 
 .card-cover img {

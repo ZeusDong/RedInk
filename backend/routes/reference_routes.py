@@ -70,8 +70,11 @@ def create_reference_blueprint():
             if min_saves is not None:
                 min_saves = int(min_saves)
 
-            # Get workspace configuration
-            workspace_name = Config.get_active_feishu_workspace()
+            # Add workspace parameter support (default to active workspace)
+            workspace_name = request.args.get('workspace')
+            if not workspace_name:
+                workspace_name = Config.get_active_feishu_workspace()
+
             workspace_config = Config.get_feishu_workspace_config(workspace_name)
 
             # Configure service
@@ -248,6 +251,45 @@ def create_reference_blueprint():
                 "error": f"获取统计信息失败。\n错误详情: {error_msg}"
             }), 500
 
+    @reference_bp.route('/reference/counts', methods=['GET'])
+    def get_workspace_counts():
+        """
+        Get record counts from cache files (very fast, no API calls)
+
+        This reads directly from the cached JSON files to get totals,
+        avoiding expensive Feishu API calls just for counting.
+        """
+        try:
+            import os
+            import json
+            cache_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'reference_cache')
+
+            counts = {}
+            if os.path.exists(cache_dir):
+                for filename in os.listdir(cache_dir):
+                    if filename.endswith('_cache.json'):
+                        cache_path = os.path.join(cache_dir, filename)
+                        try:
+                            with open(cache_path, 'r', encoding='utf-8') as f:
+                                cache_data = json.load(f)
+                                workspace = cache_data.get('workspace', filename.replace('_cache.json', ''))
+                                counts[workspace] = cache_data.get('total', 0)
+                        except Exception as e:
+                            logger.warning(f"Failed to read cache file {filename}: {e}")
+
+            return jsonify({
+                "success": True,
+                "counts": counts
+            }), 200
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"获取工作区计数失败: {error_msg}")
+            return jsonify({
+                "success": False,
+                "error": f"获取工作区计数失败。\n错误详情: {error_msg}"
+            }), 500
+
     # ==================== 数据同步 ====================
 
     @reference_bp.route('/reference/sync', methods=['POST'])
@@ -307,6 +349,10 @@ def create_reference_blueprint():
         """
         获取飞书配置（隐藏敏感信息）
 
+        支持两种配置格式：
+        1. 新格式：全局 OAuth + 工作区特定配置
+        2. 旧格式：每个工作区包含完整配置（向后兼容）
+
         返回：
         - success: 是否成功
         - config: 飞书配置（敏感字段已脱敏）
@@ -314,25 +360,45 @@ def create_reference_blueprint():
         try:
             config = Config.load_feishu_providers_config()
 
+            # Check for new format (global oauth section)
+            has_global_oauth = 'oauth' in config
+
             # 脱敏处理
             safe_config = {
                 "active_workspace": config.get("active_workspace", "default"),
                 "workspaces": {}
             }
 
+            # Add global OAuth section if present (new format)
+            if has_global_oauth:
+                oauth = config.get("oauth", {})
+                safe_config["oauth"] = {
+                    "app_id": oauth.get("app_id", ""),
+                    "app_secret": "***" if oauth.get("app_secret") else "",
+                    "user_access_token": "***" if oauth.get("user_access_token") else "",
+                    "refresh_token": "***" if oauth.get("refresh_token") else "",
+                    "token_expires_at": oauth.get("token_expires_at", ""),
+                    "refresh_token_expires_at": oauth.get("refresh_token_expires_at", ""),
+                }
+
             for name, workspace in config.get("workspaces", {}).items():
                 safe_config["workspaces"][name] = {
                     "name": workspace.get("name", ""),
-                    "app_id": workspace.get("app_id", ""),
-                    "app_secret": "***" if workspace.get("app_secret") else "",
                     "base_url": workspace.get("base_url", ""),
-                    "user_access_token": "***" if workspace.get("user_access_token") else "",
-                    "refresh_token": "***" if workspace.get("refresh_token") else "",
-                    "token_expires_at": workspace.get("token_expires_at", ""),
-                    "refresh_token_expires_at": workspace.get("refresh_token_expires_at", ""),
                     "cache_enabled": workspace.get("cache_enabled", True),
                     "cache_ttl": workspace.get("cache_ttl", 3600),
                 }
+
+                # For old format (no global oauth), include oauth fields in workspace
+                if not has_global_oauth:
+                    safe_config["workspaces"][name].update({
+                        "app_id": workspace.get("app_id", ""),
+                        "app_secret": "***" if workspace.get("app_secret") else "",
+                        "user_access_token": "***" if workspace.get("user_access_token") else "",
+                        "refresh_token": "***" if workspace.get("refresh_token") else "",
+                        "token_expires_at": workspace.get("token_expires_at", ""),
+                        "refresh_token_expires_at": workspace.get("refresh_token_expires_at", ""),
+                    })
 
             return jsonify({
                 "success": True,
@@ -352,8 +418,13 @@ def create_reference_blueprint():
         """
         更新飞书配置
 
+        支持两种配置格式：
+        1. 新格式：全局 OAuth + 工作区特定配置
+        2. 旧格式：每个工作区包含完整配置（向后兼容）
+
         请求体：
         - active_workspace: 激活的工作区名称
+        - oauth: (可选) 全局 OAuth 配置（新格式）
         - workspaces: 工作区配置字典
 
         返回：
@@ -376,28 +447,41 @@ def create_reference_blueprint():
                     "error": "参数错误：workspaces 字段不能为空。"
                 }), 400
 
-            # Preserve existing secret values when masked/empty is sent
+            # Load existing config to preserve secret values
             existing_config = Config.load_feishu_providers_config()
+
+            # Handle global OAuth section (new format)
+            if 'oauth' in data:
+                existing_oauth = existing_config.get('oauth', {})
+                oauth_fields = ['app_id', 'app_secret', 'user_access_token', 'refresh_token',
+                              'token_expires_at', 'refresh_token_expires_at']
+
+                for field in oauth_fields:
+                    incoming_value = data['oauth'].get(field)
+                    # Preserve existing value if masked or empty
+                    if incoming_value == '***' or incoming_value == '':
+                        if field in existing_oauth:
+                            data['oauth'][field] = existing_oauth[field]
+
+            # Handle workspace config
             existing_workspaces = existing_config.get('workspaces', {})
+            has_global_oauth = 'oauth' in existing_config
 
-            # Fields that should be preserved when sent as '***' or empty string
-            secret_fields = ['app_secret', 'user_access_token', 'refresh_token',
-                           'token_expires_at', 'refresh_token_expires_at']
+            # Fields that should be preserved when masked (old format only)
+            if not has_global_oauth:
+                secret_fields = ['app_secret', 'user_access_token', 'refresh_token',
+                               'token_expires_at', 'refresh_token_expires_at']
 
-            for workspace_name, workspace_data in data.get('workspaces', {}).items():
-                if workspace_name in existing_workspaces:
-                    existing_workspace = existing_workspaces[workspace_name]
-                    for field in secret_fields:
-                        incoming_value = workspace_data.get(field)
-                        # Preserve existing value if:
-                        # 1. Incoming is '***' (masked placeholder)
-                        # 2. Incoming is empty string '' (frontend didn't provide it)
-                        # 3. Incoming is exactly same as existing (no change)
-                        if (incoming_value == '***' or
-                            incoming_value == '' or
-                            (field in existing_workspace and incoming_value == existing_workspace[field])):
-                            if field in existing_workspace:
-                                workspace_data[field] = existing_workspace[field]
+                for workspace_name, workspace_data in data.get('workspaces', {}).items():
+                    if workspace_name in existing_workspaces:
+                        existing_workspace = existing_workspaces[workspace_name]
+                        for field in secret_fields:
+                            incoming_value = workspace_data.get(field)
+                            if (incoming_value == '***' or
+                                incoming_value == '' or
+                                (field in existing_workspace and incoming_value == existing_workspace[field])):
+                                if field in existing_workspace:
+                                    workspace_data[field] = existing_workspace[field]
 
             # Save configuration
             Config.save_feishu_providers_config(data)

@@ -208,7 +208,13 @@ class Config:
 
     @classmethod
     def get_feishu_workspace_config(cls, workspace_name: str = None):
-        """获取飞书工作区配置"""
+        """
+        获取飞书工作区配置
+
+        支持两种配置格式：
+        1. 新格式：全局 OAuth + 工作区特定配置
+        2. 旧格式：每个工作区包含完整配置（向后兼容）
+        """
         config = cls.load_feishu_providers_config()
 
         if workspace_name is None:
@@ -239,6 +245,18 @@ class Config:
             )
 
         workspace_config = workspaces[workspace_name].copy()
+
+        # Merge with global OAuth settings if present (new format)
+        global_oauth = config.get('oauth', {})
+        if global_oauth:
+            # Global OAuth fields take precedence over workspace-level OAuth
+            # This allows managing tokens in one place
+            oauth_fields = ['app_id', 'app_secret', 'user_access_token', 'refresh_token',
+                          'token_expires_at', 'refresh_token_expires_at']
+            for field in oauth_fields:
+                if global_oauth.get(field):
+                    workspace_config[field] = global_oauth[field]
+            logger.debug(f"Merged global OAuth settings for workspace {workspace_name}")
 
         # 验证必要字段
         if not workspace_config.get('app_id'):
@@ -276,10 +294,14 @@ class Config:
     @classmethod
     def update_feishu_workspace_tokens(cls, workspace_name: str, tokens: dict) -> None:
         """
-        Update access token and refresh token for a workspace.
+        Update access token and refresh token.
+
+        Supports two config formats:
+        1. New format with global OAuth: Updates global oauth section (preferred)
+        2. Old format with per-workspace tokens: Updates workspace-level tokens (legacy)
 
         Args:
-            workspace_name: Name of the workspace
+            workspace_name: Name of the workspace (used for logging in new format)
             tokens: Dict containing:
                 - user_access_token: New access token
                 - refresh_token: New refresh token
@@ -290,22 +312,30 @@ class Config:
 
         config = cls.load_feishu_providers_config()
 
-        if workspace_name not in config.get('workspaces', {}):
-            raise ValueError(f"Workspace {workspace_name} not found")
-
-        workspace = config['workspaces'][workspace_name]
-
         # Calculate expiry timestamps
         now = datetime.now()
         access_token_expiry = now + timedelta(seconds=tokens['expires_in'])
         refresh_token_expiry = now + timedelta(seconds=tokens['refresh_token_expires_in'])
 
-        # Update tokens
-        workspace['user_access_token'] = tokens['user_access_token']
-        workspace['refresh_token'] = tokens['refresh_token']
-        workspace['token_expires_at'] = access_token_expiry.isoformat()
-        workspace['refresh_token_expires_at'] = refresh_token_expiry.isoformat()
+        # Check if using new format (global oauth section)
+        if 'oauth' in config:
+            # Update global OAuth section (new format - one place to manage tokens)
+            config['oauth']['user_access_token'] = tokens['user_access_token']
+            config['oauth']['refresh_token'] = tokens['refresh_token']
+            config['oauth']['token_expires_at'] = access_token_expiry.isoformat()
+            config['oauth']['refresh_token_expires_at'] = refresh_token_expiry.isoformat()
+            logger.info(f"Updated global OAuth tokens (from workspace {workspace_name}), expires at {access_token_expiry}")
+        else:
+            # Old format: update workspace-level tokens (backward compatibility)
+            if workspace_name not in config.get('workspaces', {}):
+                raise ValueError(f"Workspace {workspace_name} not found")
+
+            workspace = config['workspaces'][workspace_name]
+            workspace['user_access_token'] = tokens['user_access_token']
+            workspace['refresh_token'] = tokens['refresh_token']
+            workspace['token_expires_at'] = access_token_expiry.isoformat()
+            workspace['refresh_token_expires_at'] = refresh_token_expiry.isoformat()
+            logger.info(f"Updated tokens for workspace {workspace_name}, expires at {access_token_expiry}")
 
         # Save updated config
         cls.save_feishu_providers_config(config)
-        logger.info(f"Updated tokens for workspace {workspace_name}, expires at {access_token_expiry}")

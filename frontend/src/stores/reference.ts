@@ -58,6 +58,9 @@ export interface ReferenceState {
 
   // 选中的记录（用于详情查看）
   selectedRecord: ReferenceRecord | null
+
+  // Data source mode
+  sourceMode: 'benchmark' | 'search'
 }
 
 export const useReferenceStore = defineStore('reference', {
@@ -97,7 +100,10 @@ export const useReferenceStore = defineStore('reference', {
     feishuConfig: null,
 
     // 选中的记录
-    selectedRecord: null
+    selectedRecord: null,
+
+    // Data source mode
+    sourceMode: 'benchmark'
   }),
 
   getters: {
@@ -115,6 +121,16 @@ export const useReferenceStore = defineStore('reference', {
     availableNoteTypes(): string[] {
       if (!this.stats) return []
       return Object.keys(this.stats.note_type_distribution)
+    },
+
+    /**
+     * Available data source workspaces
+     */
+    availableWorkspaces(): Record<string, { label: string; workspace: string; icon: string }> {
+      return {
+        benchmark: { label: '对标账号库', workspace: 'default', icon: '🔴' },
+        search: { label: '关键词搜索', workspace: 'xhsKeywordSearch', icon: '🔍' }
+      }
     },
 
     /**
@@ -145,6 +161,7 @@ export const useReferenceStore = defineStore('reference', {
         const queryParams: ReferenceQueryParams = {
           page: params?.page || this.filters.page,
           page_size: params?.page_size || this.filters.page_size,
+          workspace: params?.workspace || this.getCurrentWorkspace(),
           keyword: params?.keyword !== undefined ? params.keyword : this.filters.keyword,
           industry: params?.industry !== undefined ? params.industry : this.filters.industry,
           note_type: params?.note_type !== undefined ? params.note_type : this.filters.note_type,
@@ -391,6 +408,38 @@ export const useReferenceStore = defineStore('reference', {
      */
     clearSelectedRecord() {
       this.selectedRecord = null
+    },
+
+    /**
+     * Set data source mode
+     */
+    setSourceMode(mode: 'benchmark' | 'search') {
+      this.sourceMode = mode
+      this.filters.page = 1  // Reset to first page
+    },
+
+    /**
+     * Get current workspace parameter for API
+     */
+    getCurrentWorkspace(): string {
+      const workspaces = this.availableWorkspaces
+      return workspaces[this.sourceMode].workspace
+    },
+
+    /**
+     * Fetch workspace counts (lightweight, doesn't affect records)
+     */
+    async fetchWorkspaceCounts() {
+      try {
+        const result = await referenceApi.getWorkspaceCounts()
+        if (result.success && result.counts) {
+          return result.counts
+        }
+        return {}
+      } catch (e: any) {
+        console.error('[Reference Store] Failed to fetch workspace counts:', e)
+        return {}
+      }
     }
   }
 })

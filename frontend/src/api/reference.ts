@@ -66,6 +66,7 @@ export interface ReferenceRecord {
 export interface ReferenceQueryParams {
   page?: number
   page_size?: number
+  workspace?: string
   keyword?: string
   industry?: string
   note_type?: string
@@ -73,6 +74,22 @@ export interface ReferenceQueryParams {
   min_saves?: number
   sort_by?: 'created_at' | 'likes' | 'saves' | 'comments' | 'total_engagement' | 'save_ratio'
   sort_order?: 'asc' | 'desc'
+}
+
+/**
+ * Note source mode for API queries
+ */
+export interface NoteSourceParams extends ReferenceQueryParams {
+  workspace?: string  // 'default' or 'test_xhsKeywordSearch'
+}
+
+/**
+ * Workspace counts response
+ */
+export interface WorkspaceCountsResult {
+  success: boolean
+  counts?: Record<string, number>
+  error?: string
 }
 
 /**
@@ -103,19 +120,35 @@ export interface ReferenceStats {
 }
 
 /**
- * 飞书工作区配置
+ * 飞书全局 OAuth 配置（新格式）
  */
-export interface FeishuWorkspace {
-  name: string
+export interface FeishuOAuth {
   app_id: string
   app_secret: string
-  base_url: string
   user_access_token: string
   refresh_token?: string
   token_expires_at?: string
   refresh_token_expires_at?: string
+}
+
+/**
+ * 飞书工作区配置
+ *
+ * 新格式：仅包含工作区特定字段（OAuth 字段从全局 oauth 获取）
+ * 旧格式：包含完整配置（向后兼容）
+ */
+export interface FeishuWorkspace {
+  name: string
+  base_url: string
   cache_enabled: boolean
   cache_ttl: number
+  // 旧格式的 OAuth 字段（可选，用于向后兼容）
+  app_id?: string
+  app_secret?: string
+  user_access_token?: string
+  refresh_token?: string
+  token_expires_at?: string
+  refresh_token_expires_at?: string
 }
 
 /**
@@ -124,6 +157,8 @@ export interface FeishuWorkspace {
 export interface FeishuConfig {
   active_workspace: string
   workspaces: Record<string, FeishuWorkspace>
+  // 新格式：全局 OAuth 配置（可选）
+  oauth?: FeishuOAuth
 }
 
 // ==================== API 函数 ====================
@@ -149,6 +184,7 @@ export async function getReferenceRecords(
       page_size: params.page_size || 20
     }
 
+    if (params.workspace) queryParams.workspace = params.workspace
     if (params.keyword) queryParams.keyword = params.keyword
     if (params.industry) queryParams.industry = params.industry
     if (params.note_type) queryParams.note_type = params.note_type
@@ -559,6 +595,32 @@ export async function testFeishuConnection(
         return { success: false, error: '网络连接失败，请检查网络设置' }
       }
       const errorMessage = error.response?.data?.error || error.message || '测试飞书连接失败'
+      return { success: false, error: errorMessage }
+    }
+    return { success: false, error: '未知错误，请稍后重试' }
+  }
+}
+
+/**
+ * Get record counts for all workspaces
+ *
+ * Returns a lightweight response with only the total counts,
+ * much faster than fetching full records.
+ */
+export async function getWorkspaceCounts(): Promise<WorkspaceCountsResult> {
+  try {
+    const response = await axios.get<{ success: boolean; counts: Record<string, number> }>(
+      `${API_BASE_URL}/reference/counts`,
+      { timeout: 5000 }
+    )
+
+    return {
+      success: response.data.success,
+      counts: response.data.counts || {}
+    }
+  } catch (error: any) {
+    if (axios.isAxiosError(error)) {
+      const errorMessage = error.response?.data?.error || error.message || '获取工作区计数失败'
       return { success: false, error: errorMessage }
     }
     return { success: false, error: '未知错误，请稍后重试' }

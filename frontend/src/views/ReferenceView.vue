@@ -11,13 +11,13 @@
             <line x1="16" y1="17" x2="8" y2="17"></line>
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
-          对标文案查询
+          笔记素材库
         </h1>
-        <div class="result-count">
-          <span class="count-number">{{ store.pagination.total }}</span>
-          <span class="count-label">条记录</span>
-          <span v-if="store.hasActiveFilters" class="filter-indicator">（已筛选）</span>
-        </div>
+        <SourceSegmentedControl
+          v-model="store.sourceMode"
+          :counts="sourceCounts"
+          @update:model-value="handleSourceChange"
+        />
       </div>
       <div class="header-actions">
         <!-- 视图切换 -->
@@ -167,6 +167,7 @@
               v-for="record in store.records"
               :key="record.record_id"
               :record="record"
+              :mode="store.sourceMode"
               @detail="handleShowDetail"
             />
           </div>
@@ -177,6 +178,7 @@
               v-for="record in store.records"
               :key="record.record_id"
               :record="record"
+              :mode="store.sourceMode"
               @detail="handleShowDetail"
             />
           </div>
@@ -255,6 +257,7 @@ import ReferenceFilter from '@/components/reference/ReferenceFilter.vue'
 import ReferenceListItem from '@/components/reference/ReferenceListItem.vue'
 import ReferenceCard from '@/components/reference/ReferenceCard.vue'
 import ReferenceDetailModal from '@/components/reference/ReferenceDetailModal.vue'
+import SourceSegmentedControl from '@/components/reference/SourceSegmentedControl.vue'
 
 /**
  * 对标文案查询页面
@@ -269,6 +272,12 @@ const showDetailModal = ref(false)
 const showAdvancedFilter = ref(false)
 const jumpPage = ref(1)
 const viewMode = ref<'list' | 'grid'>('list')
+
+// Source counts for segmented control
+const sourceCounts = ref<Record<string, number | undefined>>({
+  benchmark: undefined,
+  search: undefined
+})
 
 // 排序选项
 const sortOptions = [
@@ -307,12 +316,24 @@ function formatCount(count: number): string {
 // 初始化
 onMounted(async () => {
   console.log('[ReferenceView] Component mounted, initializing...')
-  console.log('[ReferenceView] Fetching stats first...')
+
+  // Fetch initial stats
   await store.fetchStats()
-  console.log('[ReferenceView] Stats fetched:', store.stats)
-  console.log('[ReferenceView] Now fetching records...')
+
+  // Fetch workspace counts (lightweight, doesn't affect records)
+  const allCounts = await store.fetchWorkspaceCounts()
+
+  // Map workspace names to mode keys
+  const workspaces = store.availableWorkspaces
+  sourceCounts.value = {
+    benchmark: allCounts[workspaces.benchmark.workspace],
+    search: allCounts[workspaces.search.workspace]
+  }
+
+  // Fetch current mode records for display
   await store.fetchRecords()
-  console.log('[ReferenceView] Initialization complete. Records:', store.records.length)
+
+  console.log('[ReferenceView] Initialization complete.')
 })
 
 // 更新筛选条件
@@ -393,6 +414,12 @@ async function handleShowDetail(recordId: string) {
 function handleCloseDetail() {
   showDetailModal.value = false
   store.clearSelectedRecord()
+}
+
+// Handle data source change
+async function handleSourceChange(newMode: 'benchmark' | 'search') {
+  store.setSourceMode(newMode)
+  await store.fetchRecords()
 }
 
 // 翻页
