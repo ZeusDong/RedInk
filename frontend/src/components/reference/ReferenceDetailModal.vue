@@ -145,18 +145,76 @@
             </div>
 
             <!-- 所有图片 -->
-            <div class="detail-images" v-if="record.images.length > 1">
-              <h3 class="images-title">笔记图片</h3>
-              <div class="images-grid">
-                <img
-                  v-for="(image, index) in record.images"
-                  :key="index"
-                  :src="image"
-                  alt="image"
-                  class="images-item"
-                  @click="previewImage(image)"
-                />
-              </div>
+            <div class="detail-images">
+              <!-- 有图片时 -->
+              <template v-if="displayImages.length > 0">
+                <h3 class="images-title">笔记图片 ({{ displayImages.length }})</h3>
+                <div class="images-grid">
+                  <img
+                    v-for="(image, index) in displayImages"
+                    :key="index"
+                    :src="image"
+                    alt="image"
+                    class="images-item"
+                    @click="previewImage(image)"
+                  />
+                </div>
+              </template>
+
+              <!-- 无图片时 -->
+              <template v-else-if="showEmptyState">
+                <div class="images-empty-state">
+                  <div class="empty-icon">📷</div>
+                  <h3>图片未添加</h3>
+
+                  <!-- 有图片URL时显示下载按钮 -->
+                  <template v-if="record.images && record.images.length > 0">
+                    <p class="empty-text">数据中包含图片链接，可尝试自动下载</p>
+                    <div class="action-buttons">
+                      <button
+                        class="action-btn primary"
+                        :disabled="isFetching"
+                        @click="fetchImages"
+                      >
+                        {{ isFetching ? '⏳ 下载中...' : '🔥 下载图片' }}
+                      </button>
+                    </div>
+                  </template>
+
+                  <!-- 无图片URL时显示手动放置说明 -->
+                  <template v-else>
+                    <p class="empty-text">请手动将图片放置到以下目录：</p>
+                    <div class="path-box">
+                      <code>{{ manualImagePath }}</code>
+                    </div>
+                    <p class="empty-hint">图片命名：0.jpg, 1.jpg, 2.jpg, ...</p>
+
+                    <div class="action-buttons">
+                      <a
+                        v-if="record.note_link"
+                        :href="record.note_link"
+                        target="_blank"
+                        rel="noopener"
+                        class="action-btn"
+                      >
+                        🔗 打开原文获取图片
+                      </a>
+                    </div>
+                  </template>
+
+                  <!-- 状态消息 -->
+                  <div v-if="fetchMessage" class="fetch-message" :class="fetchMessage.type">
+                    {{ fetchMessage.text }}
+                  </div>
+                </div>
+              </template>
+
+              <!-- 检查中 -->
+              <template v-else>
+                <div class="images-loading">
+                  <span>⏳ 检查中...</span>
+                </div>
+              </template>
             </div>
           </div>
 
@@ -179,7 +237,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { ReferenceRecord } from '@/api'
 
 /**
@@ -189,7 +247,7 @@ import type { ReferenceRecord } from '@/api'
  */
 
 // 定义 Props
-defineProps<{
+const props = defineProps<{
   visible: boolean
   record: ReferenceRecord | null
 }>()
@@ -201,6 +259,28 @@ defineEmits<{
 
 // 图片预览
 const previewImageSrc = ref<string | null>(null)
+
+// 图片获取状态
+const isFetching = ref(false)
+const fetchMessage = ref<{type: 'success' | 'error' | 'info', text: string} | null>(null)
+const hasCheckedLocal = ref(false)
+
+// 计算属性：显示的图片列表
+const displayImages = computed(() => {
+  return props.record?.images || []
+})
+
+// 判断是否显示空状态
+const showEmptyState = computed(() => {
+  return displayImages.value.length === 0 && hasCheckedLocal.value
+})
+
+// 获取手动放置图片的目录路径
+const manualImagePath = computed(() => {
+  if (!props.record) return ''
+  const recordId = props.record.record_id
+  return `backend/static/reference_images/${recordId}/`
+})
 
 function previewImage(src: string) {
   previewImageSrc.value = src
@@ -227,6 +307,77 @@ function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
+
+// 检查本地是否有图片
+async function checkLocalImages() {
+  if (!props.record) return
+
+  try {
+    const { checkReferenceImages } = await import('@/api')
+    const result = await checkReferenceImages(props.record.record_id)
+
+    if (result.exists && result.images.length > 0) {
+      if (props.record) {
+        props.record.images = result.images
+      }
+    }
+
+    hasCheckedLocal.value = true
+  } catch (e) {
+    hasCheckedLocal.value = true
+  }
+}
+
+// 从现有URL下载图片
+async function fetchImages() {
+  if (!props.record) return
+
+  isFetching.value = true
+  fetchMessage.value = { type: 'info', text: '正在下载图片...' }
+
+  try {
+    const { fetchReferenceImages } = await import('@/api')
+    const result = await fetchReferenceImages(
+      props.record.record_id,
+      props.record.note_link || '',
+      props.record.images || []
+    )
+
+    if (result.success) {
+      fetchMessage.value = {
+        type: 'success',
+        text: `✓ 成功下载 ${result.count} 张图片`
+      }
+      if (props.record && result.images) {
+        props.record.images = result.images
+      }
+      setTimeout(() => fetchMessage.value = null, 3000)
+    } else {
+      fetchMessage.value = {
+        type: 'error',
+        text: result.message || '下载失败'
+      }
+      setTimeout(() => fetchMessage.value = null, 5000)
+    }
+  } catch (e) {
+    fetchMessage.value = {
+      type: 'error',
+      text: `网络错误: ${(e as Error).message}`
+    }
+  } finally {
+    isFetching.value = false
+  }
+}
+
+// 监听记录变化
+watch(() => props.record, (newRecord) => {
+  if (newRecord) {
+    previewImageSrc.value = ''
+    fetchMessage.value = null
+    hasCheckedLocal.value = false
+    checkLocalImages()
+  }
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -532,6 +683,128 @@ function formatDate(dateStr: string): string {
 
 .images-item:hover {
   transform: scale(1.05);
+}
+
+/* 加载状态 */
+.images-loading {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-sub, #666);
+}
+
+/* 空状态 */
+.images-empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  background: #f9f9f9;
+  border-radius: 12px;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.images-empty-state h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-main, #1a1a1a);
+  margin: 0 0 8px 0;
+}
+
+.empty-text {
+  font-size: 14px;
+  color: var(--text-sub, #666);
+  margin: 0 0 16px 0;
+}
+
+.empty-hint {
+  font-size: 13px;
+  color: var(--text-sub, #666);
+  margin: 0 0 24px 0;
+}
+
+/* 路径显示框 */
+.path-box {
+  background: #f0f0f0;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin: 0 auto 20px;
+  max-width: 500px;
+  text-align: left;
+}
+
+.path-box code {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  color: #333;
+  word-break: break-all;
+}
+
+/* 操作按钮 */
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  padding: 10px 24px;
+  border-radius: 8px;
+  border: 1px solid #e5e5e5;
+  background: white;
+  color: var(--text-main, #1a1a1a);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+  display: inline-block;
+}
+
+.action-btn:hover:not(:disabled) {
+  border-color: var(--primary, #ff2442);
+  color: var(--primary, #ff2442);
+}
+
+.action-btn.primary {
+  background: var(--primary, #ff2442);
+  border-color: var(--primary, #ff2442);
+  color: white;
+}
+
+.action-btn.primary:hover:not(:disabled) {
+  background: var(--primary-hover, #e61e3a);
+  border-color: var(--primary-hover, #e61e3a);
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 状态消息 */
+.fetch-message {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.fetch-message.success {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.fetch-message.error {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.fetch-message.info {
+  background: #e3f2fd;
+  color: #1565c0;
 }
 
 /* 加载状态 */
