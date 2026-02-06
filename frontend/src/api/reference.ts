@@ -633,3 +633,90 @@ export async function getWorkspaceCounts(): Promise<WorkspaceCountsResult> {
     return { success: false, error: '未知错误，请稍后重试' }
   }
 }
+
+// ==================== 参考图片 API ====================
+
+/**
+ * 检查本地参考图片
+ *
+ * @param recordId - 记录 ID
+ * @returns Promise 包含图片信息
+ */
+export async function checkReferenceImages(
+  recordId: string
+): Promise<{
+  exists: boolean
+  images: string[]
+  count?: number
+  source?: string
+}> {
+  try {
+    const response = await axios.get<{
+      exists: boolean
+      images: string[]
+      count?: number
+      source?: string
+    }>(
+      `${API_BASE_URL}/reference-images/${recordId}/check`,
+      { timeout: 10000 }
+    )
+    return response.data
+  } catch (error: any) {
+    if (axios.isAxiosError(error)) {
+      // On error, return no images
+      return { exists: false, images: [] }
+    }
+    return { exists: false, images: [] }
+  }
+}
+
+/**
+ * 从现有 URL 下载参考图片
+ *
+ * @param recordId - 记录 ID
+ * @param noteLink - 笔记链接
+ * @param existingImages - 已有的图片 URL 列表
+ * @returns Promise 包含下载结果
+ */
+export async function fetchReferenceImages(
+  recordId: string,
+  noteLink: string,
+  existingImages: string[] = []
+): Promise<{
+  success: boolean
+  images?: string[]
+  count?: number
+  message?: string
+  error?: string
+}> {
+  try {
+    const response = await axios.post<{
+      success: boolean
+      images?: string[]
+      count?: number
+      message?: string
+      error?: string
+    }>(
+      `${API_BASE_URL}/reference/fetch-images`,
+      {
+        record_id: recordId,
+        note_link: noteLink,
+        existing_images: existingImages
+      },
+      { timeout: 60000 } // 60秒超时，下载可能需要较长时间
+    )
+    return response.data
+  } catch (error: any) {
+    if (axios.isAxiosError(error)) {
+      if (error.code === 'ECONNABORTED') {
+        return { success: false, error: '请求超时，请检查网络连接' }
+      }
+      if (!error.response) {
+        return { success: false, error: '网络连接失败，请检查网络设置' }
+      }
+      const errorMessage = error.response?.data?.error || error.message || '下载图片失败'
+      return { success: false, error: errorMessage }
+    }
+    return { success: false, error: '未知错误，请稍后重试' }
+  }
+}
