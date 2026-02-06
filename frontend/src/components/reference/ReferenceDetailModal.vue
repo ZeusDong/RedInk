@@ -14,23 +14,13 @@
 
           <!-- 内容区域 -->
           <div class="modal-content" v-if="record">
-            <!-- 封面图 -->
-            <div class="detail-cover" v-if="record.cover_image || record.images.length">
+            <!-- 封面图 - 只显示本地图片 -->
+            <div class="detail-cover" v-if="displayImages.length > 0">
               <img
-                v-if="record.cover_image"
-                :src="record.cover_image"
+                :src="displayImages[0]"
                 alt="cover"
                 class="cover-image"
               />
-              <div v-else class="cover-gallery">
-                <img
-                  v-for="(image, index) in record.images.slice(0, 3)"
-                  :key="index"
-                  :src="image"
-                  alt="image"
-                  class="gallery-image"
-                />
-              </div>
             </div>
 
             <!-- 标题和链接 -->
@@ -316,6 +306,12 @@ async function checkLocalImages() {
     const { checkReferenceImages } = await import('@/api')
     const result = await checkReferenceImages(props.record.record_id)
 
+    // 先清空数据中的图片链接（可能是过期的飞书图片）
+    if (props.record) {
+      props.record.images = []
+    }
+
+    // 只使用本地存在的图片
     if (result.exists && result.images.length > 0) {
       if (props.record) {
         props.record.images = result.images
