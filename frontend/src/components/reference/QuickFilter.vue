@@ -43,27 +43,37 @@
         </button>
       </div>
 
-      <!-- 高级筛选按钮 -->
-      <button
-        class="advanced-toggle"
-        :class="{ active: showAdvanced }"
-        @click="$emit('toggle:advanced')"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M12 1v6m0 6v6m9-9h-6m-6 0H3m14.74 7.26l-4.24 4.24M6.26 6.26l4.24 4.24"></path>
-        </svg>
-        高级筛选
-        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline :points="showAdvanced ? '18 15 12 9 6 15' : '6 9 12 15 18 9'"></polyline>
-        </svg>
-      </button>
+      <!-- 操作按钮组 -->
+      <div class="action-buttons">
+        <!-- 应用筛选按钮 -->
+        <button class="apply-btn" @click="$emit('search')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          应用筛选
+        </button>
+
+        <!-- 高级筛选按钮 -->
+        <button
+          class="advanced-toggle"
+          :class="{ active: showAdvanced }"
+          @click="$emit('toggle:advanced')"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 1v6m0 6v6m9-9h-6m-6 0H3m14.74 7.26l-4.24 4.24M6.26 6.26l4.24 4.24"></path>
+          </svg>
+          高级筛选
+          <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline :points="showAdvanced ? '18 15 12 9 6 15' : '6 9 12 15 18 9'"></polyline>
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { ReferenceFilterState } from '@/stores/reference'
 
 /**
@@ -208,8 +218,48 @@ const typeOptions = [
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
+/* 操作按钮组 */
+.action-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+/* 应用筛选按钮 */
+.apply-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary, #ff2442);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.apply-btn:hover {
+  background: #e61e3a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.3);
+}
+
+.apply-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(255, 36, 66, 0.2);
+}
+
+.apply-btn svg {
+  flex-shrink: 0;
+}
+
 /* 高级筛选按钮 */
 .advanced-toggle {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -223,7 +273,6 @@ const typeOptions = [
   color: #666;
   cursor: pointer;
   transition: all 0.2s;
-  width: 100%;
 }
 
 .advanced-toggle:hover {

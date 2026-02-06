@@ -97,7 +97,6 @@ def create_reference_blueprint():
 
             logger.info(f"Query result: {len(result.records)} records, total={result.total}")
             records_dict = [r.to_dict() for r in result.records]
-            logger.info(f"Serialized {len(records_dict)} records to dict")
 
             response_data = {
                 "success": True,
@@ -107,11 +106,6 @@ def create_reference_blueprint():
                 "page_size": result.page_size,
                 "has_more": result.has_more
             }
-
-            # Log the actual JSON response size
-            import json
-            json_str = json.dumps(response_data, ensure_ascii=False)
-            logger.info(f"Response JSON size: {len(json_str)} bytes, records count: {len(response_data['records'])}")
 
             return jsonify(response_data), 200
 

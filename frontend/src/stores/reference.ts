@@ -152,7 +152,6 @@ export const useReferenceStore = defineStore('reference', {
      * 获取对标文案记录列表
      */
     async fetchRecords(params?: ReferenceQueryParams) {
-      console.log('[Reference Store] fetchRecords called, params:', params)
       this.loading = true
       this.error = null
 
@@ -171,12 +170,9 @@ export const useReferenceStore = defineStore('reference', {
           sort_order: params?.sort_order || this.filters.sort_order
         }
 
-        console.log('[Reference Store] Fetching records with params:', queryParams)
         const result = await referenceApi.getReferenceRecords(queryParams)
-        console.log('[Reference Store] API result:', result)
 
         if (result.success) {
-          console.log('[Reference Store] Records loaded:', result.records.length, result.records)
           this.records = result.records
           this.pagination = {
             page: result.page,
@@ -192,15 +188,12 @@ export const useReferenceStore = defineStore('reference', {
             page_size: result.page_size
           }
         } else {
-          console.error('[Reference Store] API error:', result.error)
           this.error = result.error || '获取记录列表失败'
         }
       } catch (e: any) {
-        console.error('[Reference Store] Fetch error:', e)
         this.error = e.message || '获取记录列表失败'
       } finally {
         this.loading = false
-        console.log('[Reference Store] Loading state:', this.loading, 'Records:', this.records.length)
       }
     },
 
@@ -238,18 +231,14 @@ export const useReferenceStore = defineStore('reference', {
       this.error = null
 
       try {
-        console.log('[Reference Store] Fetching stats...')
         const result = await referenceApi.getReferenceStats()
-        console.log('[Reference Store] Stats result:', result)
 
         if (result.success) {
           this.stats = result
         } else {
-          console.error('[Reference Store] Stats error:', result.error)
           this.error = result.error || '获取统计信息失败'
         }
       } catch (e: any) {
-        console.error('[Reference Store] Stats fetch error:', e)
         this.error = e.message || '获取统计信息失败'
       }
     },

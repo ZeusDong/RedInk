@@ -18,6 +18,8 @@ class BloggerInfo:
     avatar: str = ""
     bio: str = ""
     follower_count: int = 0
+    following_count: int = 0
+    liked_collected_count: int = 0
 
 
 @dataclass
@@ -62,6 +64,8 @@ class ReferenceRecord:
                 "avatar": self.blogger.avatar,
                 "bio": self.blogger.bio,
                 "follower_count": self.blogger.follower_count,
+                "following_count": self.blogger.following_count,
+                "liked_collected_count": self.blogger.liked_collected_count,
             },
             "title": self.title,
             "body": self.body,
@@ -100,6 +104,8 @@ class ReferenceRecord:
                 avatar=blogger_data.get("avatar", ""),
                 bio=blogger_data.get("bio", ""),
                 follower_count=blogger_data.get("follower_count", 0),
+                following_count=blogger_data.get("following_count", 0),
+                liked_collected_count=blogger_data.get("liked_collected_count", 0),
             ),
             title=data.get("title", ""),
             body=data.get("body", ""),
@@ -148,19 +154,15 @@ def transform_feishu_record(feishu_record: Dict[str, Any]) -> ReferenceRecord:
     record_id = feishu_record.get("record_id", "")
 
     # Extract blogger info
-    # Try "博主头像-text" first (Xiaohongshu CDN URL), then try tmp_url from Feishu, then fallback to proxy
+    # Try "博主头像-text" first (Xiaohongshu CDN URL), then use proxy URL
+    # Note: Feishu tmp_url requires authentication, so we always use proxy for Feishu images
     avatar_text = _get_field_value(fields, "博主头像-text", "")
     if not avatar_text:
-        # Try to use tmp_url from Feishu file
+        # Use proxy URL for Feishu images (handles authentication)
         avatar_file = fields.get("博主头像")
-        tmp_url = _extract_tmp_url(avatar_file)
-        if tmp_url:
-            avatar_text = tmp_url
-        else:
-            # Fallback to proxy URL if tmp_url not available
-            file_token = _extract_file_token(avatar_file)
-            if file_token:
-                avatar_text = _generate_image_proxy_url(file_token)
+        file_token = _extract_file_token(avatar_file)
+        if file_token:
+            avatar_text = _generate_image_proxy_url(file_token)
 
     blogger = BloggerInfo(
         nickname=_get_field_value(fields, "博主", ""),
@@ -169,6 +171,8 @@ def transform_feishu_record(feishu_record: Dict[str, Any]) -> ReferenceRecord:
         avatar=avatar_text,
         bio=_get_field_value(fields, "博主简介", ""),
         follower_count=_get_field_int(fields, "博主粉丝数", 0),
+        following_count=_get_field_int(fields, "博主关注数", 0),
+        liked_collected_count=_get_field_int(fields, "博主获赞与收藏数", 0),
     )
 
     # Extract metrics
@@ -187,23 +191,19 @@ def transform_feishu_record(feishu_record: Dict[str, Any]) -> ReferenceRecord:
     )
 
     # Extract images
-    # Priority: 1) tmp_url from Feishu, 2) 笔记封面-text, 3) proxy URL as last resort
+    # Priority: 1) file_token with proxy URL (handles Feishu auth), 2) 笔记封面-text (external URL)
+    # Note: Feishu tmp_url requires authentication, so we use proxy URL instead
     cover_file = fields.get("笔记封面")
-    tmp_url = _extract_tmp_url(cover_file)
-    if tmp_url:
-        # Use tmp_url directly from Feishu (fastest, no API call needed)
-        cover_image = tmp_url
+    file_token = _extract_file_token(cover_file)
+    if file_token:
+        # Use proxy URL for Feishu images (handles authentication)
+        cover_image = _generate_image_proxy_url(file_token)
     else:
-        file_token = _extract_file_token(cover_file)
-        if file_token:
-            # No tmp_url available, use proxy URL
-            cover_image = _generate_image_proxy_url(file_token)
-        else:
-            # Fallback to 笔记封面-text if no file_token available
-            cover_image = _get_field_value(fields, "笔记封面-text", "")
-            # Convert http to https for better browser compatibility
-            if cover_image and cover_image.startswith("http://"):
-                cover_image = cover_image.replace("http://", "https://", 1)
+        # Fallback to 笔记封面-text if no file_token available
+        cover_image = _get_field_value(fields, "笔记封面-text", "")
+        # Convert http to https for better browser compatibility
+        if cover_image and cover_image.startswith("http://"):
+            cover_image = cover_image.replace("http://", "https://", 1)
     images_links = _get_field_value(fields, "笔记图片链接", "")
     images = []
     if images_links:
@@ -211,6 +211,8 @@ def transform_feishu_record(feishu_record: Dict[str, Any]) -> ReferenceRecord:
             images = [img.strip() for img in images_links.split(",") if img.strip()]
         elif isinstance(images_links, list):
             images = images_links
+        # Convert http to https for better browser compatibility (fixes mixed content issues)
+        images = [_convert_http_to_https(img) if isinstance(img, str) else img for img in images]
 
     # Extract tags
     tags_value = _get_field_value(fields, "笔记标签", "")
@@ -229,6 +231,41 @@ def transform_feishu_record(feishu_record: Dict[str, Any]) -> ReferenceRecord:
             created_at = datetime.fromtimestamp(created_time / 1000)
         except (ValueError, TypeError):
             pass
+    else:
+        # Feishu records don't have created_time at record level
+        # Check for alternative timestamp fields in fields object
+        # Common alternatives: '创建时间', '发布时间', '记录创建时间'
+        alt_time = None
+        for time_key in ['创建时间', '发布时间', '记录创建时间', '创建日期', '发布日期', 'publish_time', 'create_time', 'modified_time', '更新时间']:
+            field_value = _get_field_value(fields, time_key, None)
+            if field_value:
+                try:
+                    # Try parsing as timestamp (seconds or milliseconds)
+                    if isinstance(field_value, (int, float)):
+                        # Check if it's in milliseconds (Feishu timestamps) or seconds
+                        if field_value > 1000000000000:  # Milliseconds (year 2001+)
+                            alt_time = datetime.fromtimestamp(field_value / 1000)
+                        else:  # Seconds
+                            alt_time = datetime.fromtimestamp(field_value)
+                        break
+                    elif isinstance(field_value, str):
+                        # Try parsing as ISO format string
+                        try:
+                            alt_time = datetime.fromisoformat(field_value.replace('Z', '+00:00'))
+                            break
+                        except (ValueError, AttributeError):
+                            continue
+                except (ValueError, TypeError):
+                    continue
+
+        if alt_time:
+            created_at = alt_time
+        else:
+            # Fallback: Use current time (when record was synced)
+            created_at = datetime.now()
+
+    # Extract industry
+    industry_value = _get_field_value(fields, "笔记所属行业领域", "")
 
     return ReferenceRecord(
         record_id=record_id,
@@ -242,7 +279,7 @@ def transform_feishu_record(feishu_record: Dict[str, Any]) -> ReferenceRecord:
         note_link=_get_field_value(fields, "笔记链接", ""),
         metrics=metrics,
         category=_get_field_value(fields, "笔记分类", ""),
-        industry=_get_field_value(fields, "笔记所属行业领域", ""),
+        industry=industry_value,
         note_type=_get_field_value(fields, "笔记类型", ""),
         created_at=created_at,
         updated_at=None,
@@ -252,21 +289,39 @@ def transform_feishu_record(feishu_record: Dict[str, Any]) -> ReferenceRecord:
 def _get_field_value(fields: Dict[str, Any], key: str, default: Any = "") -> Any:
     """Get field value from Feishu fields dict.
 
-    Feishu returns text fields as: [{"text": "value", "type": "text"}]
-    This function extracts the actual text value from that structure.
+    Feishu returns fields in different formats:
+    1. Plain string: "value" (e.g., "笔记所属行业领域": "服饰穿搭")
+    2. Plain number: 1234 (e.g., "点赞数": 3648, "收藏数": 3526)
+    3. Simple text: [{"text": "value", "type": "text"}]
+    4. Rich text: {"type": 1, "value": [{"text": "value", "type": "text"}]}
+    This function extracts the actual value from those structures.
     """
-    if key in fields:
-        value = fields[key]
-        if value is None:
-            return default
-        # Feishu may return values as list with single element
-        if isinstance(value, list) and len(value) > 0:
-            first_element = value[0]
-            # If first element is a dict with "text" key, extract the text value
-            if isinstance(first_element, dict) and "text" in first_element:
-                return first_element["text"]
-            return first_element
+    if key not in fields:
+        return default
+
+    value = fields[key]
+    if value is None:
+        return default
+
+    # Handle plain string values (e.g., "笔记所属行业领域": "服饰穿搭")
+    if isinstance(value, str):
         return value
+
+    # Handle plain numeric values (e.g., "点赞数": 3648, "收藏数": 3526)
+    if isinstance(value, (int, float)):
+        return value
+
+    # Handle rich text format: {"type": 1, "value": [...]}
+    if isinstance(value, dict) and "value" in value:
+        value = value["value"]
+
+    # Feishu may return values as list with single element
+    if isinstance(value, list) and len(value) > 0:
+        first_element = value[0]
+        # If first element is a dict with "text" key, extract the text value
+        if isinstance(first_element, dict) and "text" in first_element:
+            return first_element["text"]
+        return first_element
     return default
 
 
@@ -339,6 +394,24 @@ def _extract_tmp_url(feishu_file_value: Any) -> Optional[str]:
             return first_element["tmp_url"]
 
     return None
+
+
+def _convert_http_to_https(url: str) -> str:
+    """
+    Convert HTTP URLs to HTTPS for better browser compatibility.
+
+    This fixes mixed content issues when the frontend is served over HTTPS
+    but image URLs use HTTP protocol.
+
+    Args:
+        url: The URL to convert
+
+    Returns:
+        The URL with https:// protocol if it was http://, otherwise unchanged
+    """
+    if url and url.startswith("http://"):
+        return url.replace("http://", "https://", 1)
+    return url
 
 
 def _generate_image_proxy_url(file_token: str) -> str:

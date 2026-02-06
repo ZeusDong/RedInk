@@ -49,30 +49,47 @@
 
             <!-- 博主信息 -->
             <div class="detail-blogger" v-if="record.blogger.nickname">
-              <img
-                v-if="record.blogger.avatar"
-                :src="record.blogger.avatar"
-                alt="avatar"
-                class="blogger-avatar"
-              />
-              <div v-else class="blogger-avatar-placeholder">
-                {{ record.blogger.nickname.charAt(0) }}
+              <div class="blogger-header">
+                <div class="blogger-avatar-wrapper">
+                  <img
+                    v-if="record.blogger.avatar"
+                    :src="record.blogger.avatar"
+                    alt="avatar"
+                    class="blogger-avatar"
+                  />
+                  <div v-else class="blogger-avatar-placeholder">
+                    {{ record.blogger.nickname.charAt(0) }}
+                  </div>
+                  <div class="blogger-basic-info">
+                    <div class="blogger-name">{{ record.blogger.nickname }}</div>
+                    <div class="blogger-bio" v-if="parsedBio">{{ parsedBio }}</div>
+                  </div>
+                </div>
+                <a
+                  v-if="record.blogger.homepage"
+                  :href="record.blogger.homepage"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="blogger-link"
+                >
+                  访问主页
+                </a>
               </div>
-              <div class="blogger-info">
-                <div class="blogger-name">{{ record.blogger.nickname }}</div>
-                <div class="blogger-meta" v-if="record.blogger.follower_count">
-                  {{ formatFollowerCount(record.blogger.follower_count) }} 粉丝
+              <!-- 博主数据统计 -->
+              <div class="blogger-stats">
+                <div class="blogger-stat" v-if="record.blogger.follower_count">
+                  <span class="stat-value">{{ formatFollowerCount(record.blogger.follower_count) }}</span>
+                  <span class="stat-label">粉丝</span>
+                </div>
+                <div class="blogger-stat" v-if="record.blogger.following_count">
+                  <span class="stat-value">{{ formatFollowerCount(record.blogger.following_count) }}</span>
+                  <span class="stat-label">关注</span>
+                </div>
+                <div class="blogger-stat" v-if="record.blogger.liked_collected_count">
+                  <span class="stat-value">{{ formatFollowerCount(record.blogger.liked_collected_count) }}</span>
+                  <span class="stat-label">获赞与收藏</span>
                 </div>
               </div>
-              <a
-                v-if="record.blogger.homepage"
-                :href="record.blogger.homepage"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="blogger-link"
-              >
-                访问主页
-              </a>
             </div>
 
             <!-- 互动数据 -->
@@ -272,6 +289,28 @@ const manualImagePath = computed(() => {
   return `backend/static/reference_images/${recordId}/`
 })
 
+// 解析博主简介 (从JSON格式提取文本)
+const parsedBio = computed(() => {
+  if (!props.record?.blogger?.bio) return ''
+  const bio = props.record.blogger.bio
+
+  // Try to parse as JSON first
+  try {
+    const parsed = JSON.parse(bio)
+    if (parsed.value && Array.isArray(parsed.value)) {
+      // Extract text from value array
+      return parsed.value
+        .map((item: any) => item.text || '')
+        .filter(Boolean)
+        .join(' ')
+    }
+    return bio
+  } catch {
+    // Not JSON, return as-is
+    return bio
+  }
+})
+
 function previewImage(src: string) {
   previewImageSrc.value = src
 }
@@ -415,7 +454,7 @@ watch(() => props.record, (newRecord) => {
 .modal-container {
   background: white;
   border-radius: 16px;
-  max-width: 600px;
+  max-width: 680px;
   width: 100%;
   max-height: 90vh;
   overflow: hidden;
@@ -450,7 +489,7 @@ watch(() => props.record, (newRecord) => {
 .modal-content {
   max-height: 90vh;
   overflow-y: auto;
-  padding: 20px;
+  padding: 24px 28px;
 }
 
 /* 封面图 */
@@ -521,13 +560,26 @@ watch(() => props.record, (newRecord) => {
 
 /* 博主信息 */
 .detail-blogger {
-  display: flex;
-  align-items: center;
-  gap: 12px;
   padding: 16px;
   background: #f9f9f9;
   border-radius: 12px;
   margin-bottom: 20px;
+}
+
+/* 博主头部区域 */
+.blogger-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.blogger-avatar-wrapper {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
 }
 
 .blogger-avatar,
@@ -536,6 +588,7 @@ watch(() => props.record, (newRecord) => {
   height: 48px;
   border-radius: 50%;
   object-fit: cover;
+  flex-shrink: 0;
 }
 
 .blogger-avatar-placeholder {
@@ -548,8 +601,9 @@ watch(() => props.record, (newRecord) => {
   font-weight: 600;
 }
 
-.blogger-info {
+.blogger-basic-info {
   flex: 1;
+  min-width: 0;
 }
 
 .blogger-name {
@@ -558,10 +612,16 @@ watch(() => props.record, (newRecord) => {
   color: var(--text-main, #1a1a1a);
 }
 
-.blogger-meta {
+.blogger-bio {
   font-size: 13px;
   color: var(--text-sub, #666);
-  margin-top: 2px;
+  margin-top: 4px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .blogger-link {
@@ -573,11 +633,48 @@ watch(() => props.record, (newRecord) => {
   text-decoration: none;
   font-size: 13px;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .blogger-link:hover {
   border-color: var(--primary, #ff2442);
   color: var(--primary, #ff2442);
+}
+
+/* 博主数据统计 */
+.blogger-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.blogger-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 20px;
+  background: #fafafa;
+  border-radius: 12px;
+  flex: 1;
+  transition: all 0.2s ease;
+}
+
+.blogger-stat:hover {
+  background: #f5f5f5;
+  transform: translateY(-1px);
+}
+
+.blogger-stat .stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-main, #1a1a1a);
+  letter-spacing: -0.02em;
+}
+
+.blogger-stat .stat-label {
+  font-size: 12px;
+  color: var(--text-sub, #999);
+  font-weight: 400;
 }
 
 /* 互动数据 */

@@ -647,7 +647,7 @@ function handleSortBy(sortBy: typeof sortOptions[0]['value']) {
 .sidebar {
   width: 320px;
   flex-shrink: 0;
-  padding: 24px 0 24px 32px;
+  padding: 24px 24px 24px 32px;
   overflow-y: auto;
   border-right: 1px solid #e8e6e3;
   background: white;

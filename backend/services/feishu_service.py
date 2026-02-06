@@ -310,29 +310,27 @@ class FeishuService:
             logger.error(f"Error refreshing user access token: {e}")
             raise
 
-    def get_image_download_url(self, file_token: str) -> str:
+    def download_image(self, file_token: str) -> tuple[bytes, str]:
         """
-        Get the actual download URL for a Feishu image file.
+        Download image binary data using file token.
 
-        This method handles token refresh automatically when the token expires.
+        For media files (images), the /medias/{token}/download endpoint
+        returns the image data directly (or redirects to it).
 
         Args:
-            file_token: The file token from Feishu (e.g., from tmp_url)
+            file_token: The file token from Feishu
 
         Returns:
-            str: The actual download URL for the image
+            tuple[bytes, str]: The image binary data and content type
 
         Raises:
             ValueError: If token cannot be obtained or refresh fails
-            Exception: If API call fails
+            Exception: If download fails
         """
-        # Try the correct Feishu API endpoint for getting file download URL
-        # According to Feishu API docs, use the files endpoint with download_url action
-        url = f"https://open.feishu.cn/open-apis/drive/v1/files/{file_token}/download_url/"
+        logger.debug(f"download_image called with file_token: {file_token[:20] if len(file_token) > 20 else file_token}...")
 
-        headers = {
-            "Content-Type": "application/json; charset=utf-8"
-        }
+        # For media files, use the medias endpoint which returns the image directly
+        url = f"https://open.feishu.cn/open-apis/drive/v1/medias/{file_token}/download"
 
         max_retries = 2  # Allow one retry after token refresh
         attempt = 0
@@ -342,103 +340,63 @@ class FeishuService:
             try:
                 # Get valid user access token (auto-refreshes if needed)
                 access_token = self._get_valid_user_access_token()
-                headers["Authorization"] = f"Bearer {access_token}"
+                headers = {
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json; charset=utf-8"
+                }
 
-                logger.debug(f"Fetching image download URL for token: {file_token[:20]}...")
-                response = requests.get(url, headers=headers, timeout=10)
+                logger.debug(f"Downloading image from: {url}")
+                response = requests.get(url, headers=headers, timeout=30, stream=True)
 
-                # Log response details for debugging
-                logger.debug(f"Feishu API response status: {response.status_code}")
-                logger.debug(f"Feishu API response body (first 500 chars): {response.text[:500]}")
+                # Check for token expiration error in JSON response
+                content_type = response.headers.get("Content-Type", "")
+                if content_type.startswith("application/json"):
+                    try:
+                        result = response.json()
+                        code = result.get("code", -1)
+                        if code == 99991677:
+                            logger.warning("User access token expired (99991677), refreshing...")
+                            self._user_access_token = None
+                            self._user_token_expiry = None
+                            if attempt < max_retries:
+                                continue
+                            else:
+                                raise ValueError(
+                                    "user_access_token 已过期且刷新失败。\n"
+                                    "请重新进行 OAuth 授权。"
+                                )
+                        # Other API errors
+                        if code != 0:
+                            error_msg = result.get("msg", "unknown error")
+                            raise Exception(f"Failed to download image: {error_msg}")
+                    except ValueError:
+                        raise
+                    except Exception as e:
+                        logger.error(f"Error parsing API response: {e}")
+                        raise
 
-                try:
-                    result = response.json()
-                except Exception as json_err:
-                    logger.error(f"Failed to parse JSON from Feishu API: {json_err}")
-                    logger.error(f"Response status: {response.status_code}")
-                    logger.error(f"Response body: {response.text}")
-                    raise Exception(f"Failed to parse Feishu API response: {json_err}")
+                # For successful responses, the content should be the image data
+                response.raise_for_status()
 
-                code = result.get("code", -1)
+                if not content_type.startswith("image/"):
+                    logger.warning(f"Downloaded file may not be an image: {content_type}")
+                    # Default to image/webp if unknown (Feishu mostly uses WebP)
+                    content_type = "image/webp"
 
-                # Log the API response for debugging
-                if code != 0:
-                    logger.error(f"Feishu API returned error: code={code}, msg={result.get('msg', 'unknown')}, response={result}")
-
-                # Check for token expiration error
-                if code == 99991677:
-                    logger.warning("User access token expired (99991677), refreshing...")
-                    # Force token refresh for next attempt
-                    self._user_access_token = None
-                    self._user_token_expiry = None
-                    if attempt < max_retries:
-                        continue
-                    else:
-                        raise ValueError(
-                            "user_access_token 已过期且刷新失败。\n"
-                            "请重新进行 OAuth 授权。"
-                        )
-
-                if code != 0:
-                    error_msg = result.get("msg", "unknown error")
-                    raise Exception(f"Failed to get image download URL: {error_msg}")
-
-                # Extract the download URL from response
-                # The new endpoint returns: {"code": 0, "data": {"download_url": "https://..."}}
-                data = result.get("data", {})
-                download_url = data.get("download_url")
-
-                if not download_url:
-                    raise Exception(f"No download URL in response for token: {file_token}. Response: {result}")
-
-                logger.debug(f"Successfully obtained image download URL")
-                return download_url
+                # Read the streaming content
+                image_data = response.content
+                logger.debug(f"Successfully downloaded image: {len(image_data)} bytes, type: {content_type}")
+                return image_data, content_type
 
             except ValueError:
                 # Re-raise ValueError (auth errors)
                 raise
             except Exception as e:
                 if attempt >= max_retries:
-                    logger.error(f"Error getting image download URL: {e}")
+                    logger.error(f"Error downloading image: {e}")
                     raise
                 # If it's not a token error, don't retry
                 raise
-
-    def download_image(self, file_token: str) -> bytes:
-        """
-        Download image binary data using file token.
-
-        This method handles getting the download URL and downloading the image,
-        with automatic token refresh on expiration.
-
-        Args:
-            file_token: The file token from Feishu
-
-        Returns:
-            bytes: The image binary data
-
-        Raises:
-            ValueError: If token cannot be obtained or refresh fails
-            Exception: If download fails
-        """
-        logger.debug(f"download_image called with file_token: {file_token[:20] if len(file_token) > 20 else file_token}...")
-        download_url = self.get_image_download_url(file_token)
-
-        try:
-            logger.debug(f"Downloading image from: {download_url[:100]}...")
-            response = requests.get(download_url, timeout=30)
-            response.raise_for_status()
-
-            content_type = response.headers.get("Content-Type", "")
-            if not content_type.startswith("image/"):
-                logger.warning(f"Downloaded file may not be an image: {content_type}")
-
-            logger.debug(f"Successfully downloaded image: {len(response.content)} bytes")
-            return response.content
-
-        except Exception as e:
-            logger.error(f"Error downloading image: {e}")
-            raise
 
     def _handle_token_refresh_error(self, error: Exception) -> Dict[str, Any]:
         """
