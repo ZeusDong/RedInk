@@ -11,7 +11,7 @@
 """
 
 import logging
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 from backend.config import Config
 from backend.services.feishu_service import get_feishu_service
 
@@ -149,8 +149,10 @@ def create_reference_blueprint():
         - record: 完整的记录数据
         """
         try:
-            # Get workspace configuration
-            workspace_name = Config.get_active_feishu_workspace()
+            # Get workspace configuration (support query parameter, fallback to active workspace)
+            workspace_name = request.args.get('workspace')
+            if not workspace_name:
+                workspace_name = Config.get_active_feishu_workspace()
             workspace_config = Config.get_feishu_workspace_config(workspace_name)
 
             # Configure service
@@ -603,6 +605,70 @@ def create_reference_blueprint():
             return jsonify({
                 "success": False,
                 "error": f"测试飞书连接失败。\n错误详情: {error_msg}"
+            }), 500
+
+    # ==================== 图片代理 ====================
+
+    @reference_bp.route('/reference/image/<file_token>', methods=['GET'])
+    def get_feishu_image(file_token):
+        """
+        代理获取飞书图片
+
+        此接口用于从飞书获取图片数据，自动处理 user_token 刷新。
+
+        路径参数：
+        - file_token: 飞书文件 token
+
+        返回：
+        - 成功：图片二进制数据
+        - 失败：JSON 错误信息
+        """
+        try:
+            # Get workspace configuration
+            workspace_name = request.args.get('workspace')
+            if not workspace_name:
+                workspace_name = Config.get_active_feishu_workspace()
+            workspace_config = Config.get_feishu_workspace_config(workspace_name)
+
+            # Configure service
+            service = get_feishu_service()
+            service.configure(workspace_name, workspace_config)
+
+            # Download image
+            image_data = service.download_image(file_token)
+
+            # Determine content type from URL or default to image/jpeg
+            content_type = request.args.get('content_type', 'image/jpeg')
+
+            return Response(
+                image_data,
+                mimetype=content_type,
+                headers={
+                    'Cache-Control': 'public, max-age=86400',  # Cache for 1 day
+                }
+            )
+
+        except ValueError as e:
+            error_msg = str(e)
+            # Log the ValueError for debugging
+            logger.error(f"获取飞书图片失败 (ValueError): {error_msg}")
+            # Check if this is a token refresh error requiring re-auth
+            if "refresh_token" in error_msg or "重新授权" in error_msg or "已过期" in error_msg:
+                return jsonify({
+                    "success": False,
+                    "error": error_msg,
+                    "requires_reauth": True
+                }), 403  # Forbidden - requires re-authorization
+            return jsonify({
+                "success": False,
+                "error": f"参数错误。\n错误详情: {error_msg}"
+            }), 400
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"获取飞书图片失败: {error_msg}")
+            return jsonify({
+                "success": False,
+                "error": f"获取飞书图片失败。\n错误详情: {error_msg}"
             }), 500
 
     return reference_bp

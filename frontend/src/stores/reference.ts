@@ -212,7 +212,9 @@ export const useReferenceStore = defineStore('reference', {
       this.error = null
 
       try {
-        const result = await referenceApi.getReferenceRecord(recordId)
+        // Pass current workspace to ensure we fetch from the same data source
+        const currentWorkspace = this.getCurrentWorkspace()
+        const result = await referenceApi.getReferenceRecord(recordId, currentWorkspace)
 
         if (result.success && result.record) {
           this.selectedRecord = result.record

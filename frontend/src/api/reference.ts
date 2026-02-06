@@ -289,15 +289,22 @@ export async function getReferenceRecords(
  * 获取单条对标文案记录详情
  *
  * @param recordId - 记录 ID
+ * @param workspace - 工作区名称（可选，不传则使用后端默认工作区）
  * @returns Promise 包含记录详细信息
  */
 export async function getReferenceRecord(
-  recordId: string
+  recordId: string,
+  workspace?: string
 ): Promise<{ success: boolean; record?: ReferenceRecord; error?: string }> {
   try {
+    const params: Record<string, string> = {}
+    if (workspace) {
+      params.workspace = workspace
+    }
     const response = await axios.get<{ success: boolean; record: ReferenceRecord }>(
       `${API_BASE_URL}/reference/records/${recordId}`,
       {
+        params,
         timeout: 10000 // 10秒超时
       }
     )

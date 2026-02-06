@@ -148,11 +148,25 @@ def transform_feishu_record(feishu_record: Dict[str, Any]) -> ReferenceRecord:
     record_id = feishu_record.get("record_id", "")
 
     # Extract blogger info
+    # Try "博主头像-text" first (Xiaohongshu CDN URL), then try tmp_url from Feishu, then fallback to proxy
+    avatar_text = _get_field_value(fields, "博主头像-text", "")
+    if not avatar_text:
+        # Try to use tmp_url from Feishu file
+        avatar_file = fields.get("博主头像")
+        tmp_url = _extract_tmp_url(avatar_file)
+        if tmp_url:
+            avatar_text = tmp_url
+        else:
+            # Fallback to proxy URL if tmp_url not available
+            file_token = _extract_file_token(avatar_file)
+            if file_token:
+                avatar_text = _generate_image_proxy_url(file_token)
+
     blogger = BloggerInfo(
         nickname=_get_field_value(fields, "博主", ""),
         blogger_id=_get_field_value(fields, "博主ID", ""),
         homepage=_get_field_value(fields, "博主主页", ""),
-        avatar=_get_field_value(fields, "博主头像", ""),
+        avatar=avatar_text,
         bio=_get_field_value(fields, "博主简介", ""),
         follower_count=_get_field_int(fields, "博主粉丝数", 0),
     )
@@ -173,7 +187,23 @@ def transform_feishu_record(feishu_record: Dict[str, Any]) -> ReferenceRecord:
     )
 
     # Extract images
-    cover_image = _get_field_value(fields, "笔记封面", "")
+    # Priority: 1) tmp_url from Feishu, 2) 笔记封面-text, 3) proxy URL as last resort
+    cover_file = fields.get("笔记封面")
+    tmp_url = _extract_tmp_url(cover_file)
+    if tmp_url:
+        # Use tmp_url directly from Feishu (fastest, no API call needed)
+        cover_image = tmp_url
+    else:
+        file_token = _extract_file_token(cover_file)
+        if file_token:
+            # No tmp_url available, use proxy URL
+            cover_image = _generate_image_proxy_url(file_token)
+        else:
+            # Fallback to 笔记封面-text if no file_token available
+            cover_image = _get_field_value(fields, "笔记封面-text", "")
+            # Convert http to https for better browser compatibility
+            if cover_image and cover_image.startswith("http://"):
+                cover_image = cover_image.replace("http://", "https://", 1)
     images_links = _get_field_value(fields, "笔记图片链接", "")
     images = []
     if images_links:
@@ -238,6 +268,90 @@ def _get_field_value(fields: Dict[str, Any], key: str, default: Any = "") -> Any
             return first_element
         return value
     return default
+
+
+def _extract_file_token(feishu_file_value: Any) -> Optional[str]:
+    """
+    Extract file_token from a Feishu file attachment field.
+
+    Feishu file attachments are returned as:
+    {
+      "type": 17,
+      "value": [{
+        "file_token": "xxx",
+        "name": "image.jpg",
+        "tmp_url": "https://...",
+        ...
+      }]
+    }
+
+    Args:
+        feishu_file_value: The value from a Feishu file field
+
+    Returns:
+        The file_token if found, None otherwise
+    """
+    if not feishu_file_value:
+        return None
+
+    # Handle dict with "value" key
+    if isinstance(feishu_file_value, dict) and "value" in feishu_file_value:
+        value_list = feishu_file_value["value"]
+        if isinstance(value_list, list) and len(value_list) > 0:
+            first_file = value_list[0]
+            if isinstance(first_file, dict) and "file_token" in first_file:
+                return first_file["file_token"]
+
+    # Handle list directly
+    if isinstance(feishu_file_value, list) and len(feishu_file_value) > 0:
+        first_element = feishu_file_value[0]
+        if isinstance(first_element, dict) and "file_token" in first_element:
+            return first_element["file_token"]
+
+    return None
+
+
+def _extract_tmp_url(feishu_file_value: Any) -> Optional[str]:
+    """
+    Extract tmp_url (direct download URL) from a Feishu file attachment field.
+
+    Args:
+        feishu_file_value: The value from a Feishu file field
+
+    Returns:
+        The tmp_url if found, None otherwise
+    """
+    if not feishu_file_value:
+        return None
+
+    # Handle dict with "value" key
+    if isinstance(feishu_file_value, dict) and "value" in feishu_file_value:
+        value_list = feishu_file_value["value"]
+        if isinstance(value_list, list) and len(value_list) > 0:
+            first_file = value_list[0]
+            if isinstance(first_file, dict) and "tmp_url" in first_file:
+                return first_file["tmp_url"]
+
+    # Handle list directly
+    if isinstance(feishu_file_value, list) and len(feishu_file_value) > 0:
+        first_element = feishu_file_value[0]
+        if isinstance(first_element, dict) and "tmp_url" in first_element:
+            return first_element["tmp_url"]
+
+    return None
+
+
+def _generate_image_proxy_url(file_token: str) -> str:
+    """
+    Generate a proxy URL for accessing Feishu images through the backend.
+
+    Args:
+        file_token: The Feishu file token
+
+    Returns:
+        The proxy URL (e.g., /api/reference/image/xxx)
+    """
+    return f"/api/reference/image/{file_token}"
 
 
 def _get_field_int(fields: Dict[str, Any], key: str, default: int = 0) -> int:
