@@ -339,3 +339,10 @@ class Config:
 
         # Save updated config
         cls.save_feishu_providers_config(config)
+
+    @classmethod
+    def get_reference_images_path(cls) -> Path:
+        """获取参考图片存储路径（固定路径，无需配置）"""
+        path = Path(__file__).parent / 'static' / 'reference_images'
+        path.mkdir(parents=True, exist_ok=True)
+        return path
