@@ -634,11 +634,8 @@ def create_reference_blueprint():
             service = get_feishu_service()
             service.configure(workspace_name, workspace_config)
 
-            # Download image
-            image_data = service.download_image(file_token)
-
-            # Determine content type from URL or default to image/jpeg
-            content_type = request.args.get('content_type', 'image/jpeg')
+            # Download image (returns both data and content type)
+            image_data, content_type = service.download_image(file_token)
 
             return Response(
                 image_data,
@@ -670,5 +667,113 @@ def create_reference_blueprint():
                 "success": False,
                 "error": f"获取飞书图片失败。\n错误详情: {error_msg}"
             }), 500
+
+    @reference_bp.route('/reference/fetch-images', methods=['POST'])
+    def fetch_note_images():
+        """
+        从现有URL下载图片
+
+        请求体：
+        - record_id: 记录ID
+        - note_link: 笔记链接
+        - existing_images: 已有的图片URL列表
+
+        返回：
+        - success: 是否成功
+        - images: 图片路径列表
+        - count: 图片数量
+        """
+        try:
+            from backend.services.xhs_image_fetcher import XHSImageFetcher
+            from backend.config import Config
+
+            data = request.get_json()
+            record_id = data.get('record_id')
+            note_link = data.get('note_link')
+            existing_images = data.get('existing_images', [])
+
+            if not record_id:
+                return jsonify({
+                    "success": False,
+                    "error": "missing_record_id"
+                }), 400
+
+            storage_path = Config.get_reference_images_path()
+            fetcher = XHSImageFetcher(timeout=30)
+            result = fetcher.fetch_and_save(
+                record_id=record_id,
+                note_link=note_link or '',
+                save_dir=storage_path,
+                existing_images=existing_images
+            )
+
+            return jsonify(result), 200
+
+        except Exception as e:
+            logger.error(f"获取图片失败: {e}", exc_info=True)
+            return jsonify({
+                "success": False,
+                "error": "internal_error",
+                "message": f"获取图片失败: {str(e)}"
+            }), 500
+
+
+    @reference_bp.route('/reference-images/<record_id>/check', methods=['GET'])
+    def check_reference_images(record_id: str):
+        """
+        检查本地是否有图片
+
+        返回：
+        - exists: 是否有本地图片
+        - images: 图片路径列表
+        - count: 图片数量
+        - source: "local"
+        """
+        try:
+            from backend.services.xhs_image_fetcher import XHSImageFetcher
+            from backend.config import Config
+
+            storage_path = Config.get_reference_images_path()
+            record_dir = storage_path / record_id
+
+            fetcher = XHSImageFetcher()
+            result = fetcher.get_local_images(record_dir, record_id)
+
+            if result.get("success"):
+                return jsonify({
+                    "exists": True,
+                    "images": result["images"],
+                    "count": result["count"],
+                    "source": "local"
+                }), 200
+            else:
+                return jsonify({
+                    "exists": False,
+                    "images": []
+                }), 200
+
+        except Exception as e:
+            logger.error(f"检查图片失败: {e}")
+            return jsonify({"error": str(e)}), 500
+
+
+    @reference_bp.route('/reference-images/<record_id>/<filename>', methods=['GET'])
+    def serve_reference_image(record_id: str, filename: str):
+        """提供已下载的参考图片"""
+        try:
+            from backend.config import Config
+            from flask import send_from_directory
+
+            storage_path = Config.get_reference_images_path()
+            record_dir = storage_path / record_id
+
+            if not record_dir.exists():
+                return jsonify({"error": "图片不存在"}), 404
+
+            return send_from_directory(str(record_dir), filename)
+
+        except Exception as e:
+            logger.error(f"提供图片失败: {e}")
+            return jsonify({"error": str(e)}), 500
 
     return reference_bp
