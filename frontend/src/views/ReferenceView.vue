@@ -287,7 +287,7 @@ const sortOptions = [
   { label: '评论最多', value: 'comments' },
   { label: '总互动量', value: 'total_engagement' },
   { label: '收藏比', value: 'save_ratio' }
-]
+] as const
 
 // 计算总页数
 const totalPages = computed(() => {
@@ -457,7 +457,7 @@ function toggleIndustryFilter(industry: string) {
 }
 
 // 按字段排序
-function handleSortBy(sortBy: typeof sortOptions[0]['value']) {
+function handleSortBy(sortBy: typeof sortOptions[number]['value']) {
   if (store.filters.sort_by === sortBy) {
     toggleSortOrder()
   } else {
