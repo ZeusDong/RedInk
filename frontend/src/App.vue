@@ -55,7 +55,7 @@
         <footer v-if="route.path !== '/'" class="global-footer">
           <div class="footer-content">
             <div class="footer-text">
-              © 2026 by 哲鸪 (Ether)
+              © 2026 by 哲鸪
             </div>
           </div>
         </footer>
