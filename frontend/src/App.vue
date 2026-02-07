@@ -37,7 +37,7 @@
         </button>
 
         <div class="user-info">
-          <div class="user-avatar">墨</div>
+          <div class="user-avatar">哲</div>
           <div class="user-details">
             <div class="user-name">哲鸪</div>
             <div class="user-title">Ether</div>
