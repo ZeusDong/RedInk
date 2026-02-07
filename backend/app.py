@@ -66,6 +66,12 @@ def create_app():
     # 注册所有 API 路由
     register_routes(app)
 
+    # 打印所有注册的路由（用于调试）
+    logger.info("📋 已注册的 API 路由:")
+    for rule in app.url_map.iter_rules():
+        if rule.rule.startswith('/api/'):
+            logger.info(f"   {rule.methods} {rule.rule}")
+
     # 启动时验证配置
     _validate_config_on_startup(logger)
 

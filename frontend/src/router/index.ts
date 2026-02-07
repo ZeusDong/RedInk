@@ -6,6 +6,7 @@ import ResultView from '../views/ResultView.vue'
 import HistoryView from '../views/HistoryView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import ReferenceView from '../views/ReferenceView.vue'
+import AnalysisView from '../views/AnalysisView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -44,6 +45,11 @@ const router = createRouter({
       path: '/reference',
       name: 'reference',
       component: ReferenceView
+    },
+    {
+      path: '/analysis',
+      name: 'analysis',
+      component: AnalysisView
     },
     {
       path: '/settings',

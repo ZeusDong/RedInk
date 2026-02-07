@@ -1,0 +1,225 @@
+"""
+对标分析 API 路由
+
+提供待分析笔记列表的 CRUD 操作 API
+"""
+
+import logging
+from flask import Blueprint, request, jsonify
+
+logger = logging.getLogger(__name__)
+
+# 模块级别的日志 - 确认模块是否被加载
+logger.info("[ANALYSIS_ROUTES] Module loading...")
+
+# 尝试导入服务
+try:
+    from backend.services.analysis_service import get_analysis_service
+    logger.info("[ANALYSIS_ROUTES] Service import successful")
+except ImportError as e:
+    logger.error(f"[ANALYSIS_ROUTES] Service import failed: {e}", exc_info=True)
+    raise
+
+
+def create_analysis_blueprint():
+    """创建对标分析 API Blueprint（工厂函数，支持多次调用）"""
+    logger.info("[ANALYSIS_ROUTES] Creating analysis blueprint...")
+    # 注意：不要加 /api 前缀，因为主蓝图已经有了
+    analysis_bp = Blueprint('analysis', __name__, url_prefix='/analysis')
+
+    @analysis_bp.route('/pending', methods=['GET'])
+    def get_pending_notes():
+        """
+        获取所有待分析笔记
+
+        GET /api/analysis/pending
+        """
+        logger.info("[ANALYSIS_ROUTES] GET /api/analysis/pending - Fetching pending notes")
+        try:
+            service = get_analysis_service()
+            logger.debug(f"[ANALYSIS_ROUTES] Service instance: {service}")
+            notes = service.get_pending_notes()
+            logger.info(f"[ANALYSIS_ROUTES] Found {len(notes)} pending notes")
+            return jsonify({
+                'success': True,
+                'data': notes,
+                'count': len(notes)
+            })
+        except Exception as e:
+            logger.error(f"[ANALYSIS_ROUTES] Error in get_pending_notes: {e}", exc_info=True)
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @analysis_bp.route('/pending', methods=['POST'])
+    def add_pending_notes():
+        """
+        添加待分析笔记（支持批量）
+
+        POST /api/analysis/pending
+        Body: { "records": [...] }
+        """
+        logger.info("[ANALYSIS_ROUTES] POST /api/analysis/pending - Adding pending notes")
+        try:
+            data = request.get_json()
+            logger.debug(f"[ANALYSIS_ROUTES] Request data: {data}")
+
+            if not data or 'records' not in data:
+                logger.warning("[ANALYSIS_ROUTES] Missing 'records' parameter in request")
+                return jsonify({'success': False, 'error': '缺少 records 参数'}), 400
+
+            service = get_analysis_service()
+            logger.debug(f"[ANALYSIS_ROUTES] Service instance: {service}")
+
+            records = data['records']
+            logger.info(f"[ANALYSIS_ROUTES] Attempting to add {len(records)} records")
+
+            count = service.add_pending_notes(records)
+
+            logger.info(f"[ANALYSIS_ROUTES] Successfully added {count} pending notes")
+            return jsonify({
+                'success': True,
+                'added': count,
+                'message': f'成功添加 {count} 条笔记'
+            })
+        except Exception as e:
+            logger.error(f"[ANALYSIS_ROUTES] Error in add_pending_notes: {e}", exc_info=True)
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @analysis_bp.route('/pending/<record_id>', methods=['DELETE'])
+    def remove_pending_note(record_id: str):
+        """
+        移除待分析笔记
+
+        DELETE /api/analysis/pending/<record_id>
+        """
+        service = get_analysis_service()
+        success = service.remove_pending_note(record_id)
+
+        if success:
+            return jsonify({'success': True, 'message': '已移除'})
+        else:
+            return jsonify({'success': False, 'error': '笔记不存在'}), 404
+
+    @analysis_bp.route('/pending', methods=['DELETE'])
+    def clear_pending_notes():
+        """
+        清空所有待分析笔记
+
+        DELETE /api/analysis/pending
+        """
+        service = get_analysis_service()
+        success = service.clear_pending_notes()
+
+        if success:
+            return jsonify({'success': True, 'message': '已清空所有笔记'})
+        else:
+            return jsonify({'success': False, 'error': '操作失败'}), 500
+
+    @analysis_bp.route('/pending/count', methods=['GET'])
+    def get_pending_count():
+        """
+        获取待分析笔记数量
+
+        GET /api/analysis/pending/count
+        """
+        service = get_analysis_service()
+        count = service.get_pending_count()
+
+        return jsonify({
+            'success': True,
+            'count': count
+        })
+
+    @analysis_bp.route('/pending/check/<record_id>', methods=['GET'])
+    def check_pending_note(record_id: str):
+        """
+        检查笔记是否在待分析列表中
+
+        GET /api/analysis/pending/check/<record_id>
+        """
+        service = get_analysis_service()
+        is_pending = service.is_pending(record_id)
+
+        return jsonify({
+            'success': True,
+            'is_pending': is_pending
+        })
+
+    # ==================== 分析结果相关 API ====================
+
+    @analysis_bp.route('/result/<record_id>', methods=['GET'])
+    def get_analysis_result(record_id: str):
+        """
+        获取笔记的分析结果
+
+        GET /api/analysis/result/<record_id>
+        """
+        service = get_analysis_service()
+        result = service.get_analysis_result(record_id)
+
+        if result:
+            return jsonify({
+                'success': True,
+                'data': result
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'data': None
+            })
+
+    @analysis_bp.route('/result', methods=['POST'])
+    def set_analysis_result():
+        """
+        设置笔记的分析结果
+
+        POST /api/analysis/result
+        Body: {
+            "record_id": str,
+            "analyzed": bool,
+            "content": str (optional)
+        }
+        """
+        logger.info("[ANALYSIS_ROUTES] POST /api/analysis/result - Setting analysis result")
+        try:
+            data = request.get_json()
+            logger.debug(f"[ANALYSIS_ROUTES] Request data: {data}")
+
+            if not data or 'record_id' not in data:
+                logger.warning("[ANALYSIS_ROUTES] Missing 'record_id' parameter in request")
+                return jsonify({'success': False, 'error': '缺少 record_id 参数'}), 400
+
+            service = get_analysis_service()
+            record_id = data['record_id']
+            analyzed = data.get('analyzed', False)
+            content = data.get('content')
+
+            logger.info(f"[ANALYSIS_ROUTES] Setting analysis result for record_id={record_id}, analyzed={analyzed}")
+
+            success = service.set_analysis_result(record_id, analyzed, content)
+
+            if success:
+                logger.info(f"[ANALYSIS_ROUTES] Successfully saved analysis result for record_id={record_id}")
+                return jsonify({'success': True, 'message': '分析结果已保存'})
+            else:
+                logger.error(f"[ANALYSIS_ROUTES] Failed to save analysis result for record_id={record_id}")
+                return jsonify({'success': False, 'error': '保存失败'}), 500
+        except Exception as e:
+            logger.error(f"[ANALYSIS_ROUTES] Error in set_analysis_result: {e}", exc_info=True)
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @analysis_bp.route('/results', methods=['GET'])
+    def get_all_analysis_results():
+        """
+        获取所有分析结果
+
+        GET /api/analysis/results
+        """
+        service = get_analysis_service()
+        results = service.get_all_analysis_results()
+
+        return jsonify({
+            'success': True,
+            'data': results
+        })
+
+    return analysis_bp

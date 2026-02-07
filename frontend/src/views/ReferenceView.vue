@@ -20,6 +20,33 @@
         />
       </div>
       <div class="header-actions">
+        <!-- 批量选择模式下的操作栏 -->
+        <template v-if="selectionMode">
+          <div class="selection-actions">
+            <label class="select-all-checkbox">
+              <input
+                type="checkbox"
+                :checked="allSelected"
+                :indeterminate="someSelected"
+                @change="toggleSelectAll"
+              />
+              <span>已选 {{ selectedCount }} 条</span>
+            </label>
+            <div class="selection-divider"></div>
+            <button class="selection-action-btn" @click="addToAnalysis" :disabled="selectedCount === 0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path>
+                <rect x="9" y="3" width="6" height="4" rx="1"></rect>
+                <path d="M9 14l2 2 4-4"></path>
+              </svg>
+              添加到分析
+            </button>
+            <button class="selection-action-btn secondary" @click="toggleSelectionMode">
+              取消
+            </button>
+          </div>
+        </template>
+
         <!-- 视图切换 -->
         <div class="view-toggle">
           <button
@@ -70,6 +97,14 @@
             <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
           </svg>
           {{ store.loading ? '同步中' : '同步数据' }}
+        </button>
+        <!-- 批量选择按钮 -->
+        <button v-if="!selectionMode" class="select-mode-btn" @click="toggleSelectionMode">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 11 12 14 22 4"></polyline>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+          </svg>
+          批量选择
         </button>
       </div>
     </header>
@@ -163,24 +198,50 @@
         <div class="records-container" :class="`view-${viewMode}`">
           <!-- 列表视图 -->
           <div v-if="viewMode === 'list' && !store.loading && store.records.length > 0" class="records-list">
-            <ReferenceListItem
+            <div
               v-for="record in store.records"
               :key="record.record_id"
-              :record="record"
-              :mode="store.sourceMode"
-              @detail="handleShowDetail"
-            />
+              class="record-wrapper"
+              :class="{ 'selection-mode': selectionMode, 'selected': isSelected(record.record_id) }"
+              @click="selectionMode && toggleSelection(record.record_id)"
+            >
+              <input
+                v-if="selectionMode"
+                type="checkbox"
+                :checked="isSelected(record.record_id)"
+                class="record-checkbox"
+                @click.stop="toggleSelection(record.record_id)"
+              />
+              <ReferenceListItem
+                :record="record"
+                :mode="store.sourceMode"
+                @detail="handleShowDetail"
+              />
+            </div>
           </div>
 
           <!-- 网格视图 -->
           <div v-else-if="viewMode === 'grid' && !store.loading && store.records.length > 0" class="records-grid">
-            <ReferenceCard
+            <div
               v-for="record in store.records"
               :key="record.record_id"
-              :record="record"
-              :mode="store.sourceMode"
-              @detail="handleShowDetail"
-            />
+              class="record-wrapper"
+              :class="{ 'selection-mode': selectionMode, 'selected': isSelected(record.record_id) }"
+              @click="selectionMode && toggleSelection(record.record_id)"
+            >
+              <input
+                v-if="selectionMode"
+                type="checkbox"
+                :checked="isSelected(record.record_id)"
+                class="record-checkbox"
+                @click.stop="toggleSelection(record.record_id)"
+              />
+              <ReferenceCard
+                :record="record"
+                :mode="store.sourceMode"
+                @detail="handleShowDetail"
+              />
+            </div>
           </div>
 
           <!-- 加载状态 -->
@@ -250,7 +311,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useReferenceStore } from '@/stores/reference'
+import { useAnalysisStore } from '@/stores/analysis'
 import ReferenceStats from '@/components/reference/ReferenceStats.vue'
 import QuickFilter from '@/components/reference/QuickFilter.vue'
 import ReferenceFilter from '@/components/reference/ReferenceFilter.vue'
@@ -268,10 +331,16 @@ import SourceSegmentedControl from '@/components/reference/SourceSegmentedContro
  */
 
 const store = useReferenceStore()
+const analysisStore = useAnalysisStore()
+const router = useRouter()
 const showDetailModal = ref(false)
 const showAdvancedFilter = ref(false)
 const jumpPage = ref(1)
 const viewMode = ref<'list' | 'grid'>('list')
+
+// 批量选择模式
+const selectionMode = ref(false)
+const selectedIds = ref<Set<string>>(new Set())
 
 // Source counts for segmented control
 const sourceCounts = ref<Record<string, number | undefined>>({
@@ -313,9 +382,68 @@ function formatCount(count: number): string {
   return count.toString()
 }
 
+// 批量选择相关
+const selectedCount = computed(() => selectedIds.value.size)
+
+const allSelected = computed(() => {
+  return store.records.length > 0 && selectedIds.value.size === store.records.length
+})
+
+const someSelected = computed(() => {
+  return selectedIds.value.size > 0 && !allSelected.value
+})
+
+// 切换选择模式
+function toggleSelectionMode() {
+  selectionMode.value = !selectionMode.value
+  if (!selectionMode.value) {
+    selectedIds.value.clear()
+  }
+}
+
+// 切换单个笔记选择状态
+function toggleSelection(recordId: string) {
+  if (selectedIds.value.has(recordId)) {
+    selectedIds.value.delete(recordId)
+  } else {
+    selectedIds.value.add(recordId)
+  }
+}
+
+// 切换全选
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selectedIds.value.clear()
+  } else {
+    store.records.forEach(r => selectedIds.value.add(r.record_id))
+  }
+}
+
+// 检查笔记是否被选中
+function isSelected(recordId: string): boolean {
+  return selectedIds.value.has(recordId)
+}
+
+// 添加到分析
+async function addToAnalysis() {
+  const selectedRecords = store.records.filter(r => selectedIds.value.has(r.record_id))
+  await analysisStore.addPendingRecords(selectedRecords)
+  analysisStore.setDataSourceMode('selected')
+
+  // 退出选择模式
+  selectionMode.value = false
+  selectedIds.value.clear()
+
+  // 跳转到分析页面
+  router.push('/analysis')
+}
+
 // 初始化
 onMounted(async () => {
   console.log('[ReferenceView] Component mounted, initializing...')
+
+  // 初始化分析 store（从后端加载已选笔记）
+  await analysisStore.initialize()
 
   // Fetch initial stats
   await store.fetchStats()
@@ -1022,5 +1150,130 @@ function handleSortBy(sortBy: typeof sortOptions[number]['value']) {
 .page-input:focus {
   outline: none;
   border-color: var(--primary, #ff2442);
+}
+
+/* ============================================
+   批量选择模式
+   ============================================ */
+
+/* 批量选择按钮 */
+.select-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid #e0dedb;
+  background: white;
+  color: #333;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.select-mode-btn:hover {
+  border-color: var(--primary, #ff2442);
+  color: var(--primary, #ff2442);
+}
+
+/* 批量操作栏 */
+.selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.select-all-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+}
+
+.select-all-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.selection-divider {
+  width: 1px;
+  height: 24px;
+  background: #e8e6e3;
+}
+
+.selection-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: none;
+  background: var(--primary, #ff2442);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.selection-action-btn:hover:not(:disabled) {
+  background: #e61e3a;
+}
+
+.selection-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.selection-action-btn.secondary {
+  background: white;
+  color: #666;
+  border: 1px solid #e0dedb;
+}
+
+.selection-action-btn.secondary:hover {
+  border-color: #ccc;
+  color: #333;
+}
+
+/* 记录包装器（用于复选框布局） */
+.record-wrapper {
+  position: relative;
+}
+
+.record-wrapper.selection-mode {
+  position: relative;
+  cursor: pointer;
+}
+
+.record-wrapper.selection-mode:hover ::v-deep(.reference-card),
+.record-wrapper.selection-mode:hover ::v-deep(.reference-list-item) {
+  box-shadow: 0 0 0 2px var(--primary, #ff2442);
+}
+
+.record-wrapper.selected ::v-deep(.reference-card),
+.record-wrapper.selected ::v-deep(.reference-list-item) {
+  box-shadow: 0 0 0 2px var(--primary, #ff2442);
+}
+
+/* 复选框 */
+.record-checkbox {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 20px;
+  height: 20px;
+  z-index: 10;
+  cursor: pointer;
+}
+
+.records-grid .record-checkbox {
+  top: 8px;
+  left: 8px;
 }
 </style>

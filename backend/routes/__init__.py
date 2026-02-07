@@ -10,11 +10,15 @@ API 路由模块
 - reference_routes: 对标文案查询相关 API
 - reference_test_routes: 测试接口相关 API
 - oauth_routes: OAuth 授权相关 API
+- analysis_routes: 对标分析相关 API
 
 所有路由都注册到统一的 /api 前缀下
 """
 
+import logging
 from flask import Blueprint
+
+logger = logging.getLogger(__name__)
 
 
 def create_api_blueprint():
@@ -26,6 +30,8 @@ def create_api_blueprint():
     Returns:
         配置好的 api Blueprint
     """
+    logger.debug("[ROUTES] Creating API blueprint...")
+
     from .outline_routes import create_outline_blueprint
     from .image_routes import create_image_blueprint
     from .history_routes import create_history_blueprint
@@ -35,19 +41,45 @@ def create_api_blueprint():
     from .reference_test_routes import create_reference_test_blueprint
     from .oauth_routes import create_oauth_blueprint
 
+    # 显式捕获 analysis_routes 导入错误
+    try:
+        from .analysis_routes import create_analysis_blueprint
+        logger.info("[ROUTES] analysis_routes module imported successfully")
+    except ImportError as e:
+        logger.error(f"[ROUTES] Failed to import analysis_routes: {e}", exc_info=True)
+        raise
+
     # 创建主 API 蓝图
     api_bp = Blueprint('api', __name__, url_prefix='/api')
 
     # 将子蓝图注册到主蓝图（不带额外前缀）
     api_bp.register_blueprint(create_outline_blueprint())
+    logger.debug("   ✅ outline_routes registered")
     api_bp.register_blueprint(create_image_blueprint())
+    logger.debug("   ✅ image_routes registered")
     api_bp.register_blueprint(create_history_blueprint())
+    logger.debug("   ✅ history_routes registered")
     api_bp.register_blueprint(create_config_blueprint())
+    logger.debug("   ✅ config_routes registered")
     api_bp.register_blueprint(create_content_blueprint())
+    logger.debug("   ✅ content_routes registered")
     api_bp.register_blueprint(create_reference_blueprint())
+    logger.debug("   ✅ reference_routes registered")
     api_bp.register_blueprint(create_reference_test_blueprint())
+    logger.debug("   ✅ reference_test_routes registered")
     api_bp.register_blueprint(create_oauth_blueprint())
+    logger.debug("   ✅ oauth_routes registered")
 
+    # 显式捕获 analysis_routes 蓝图创建错误
+    try:
+        analysis_bp = create_analysis_blueprint()
+        api_bp.register_blueprint(analysis_bp)
+        logger.debug("   ✅ analysis_routes registered")
+    except Exception as e:
+        logger.error(f"[ROUTES] Failed to create/register analysis_blueprint: {e}", exc_info=True)
+        raise
+
+    logger.info("[ROUTES] All route blueprints registered successfully")
     return api_bp
 
 
