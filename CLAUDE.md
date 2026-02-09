@@ -78,7 +78,8 @@ backend/
 │   ├── outline.py     # Outline generation from AI
 │   ├── image.py       # Image generation with SSE streaming
 │   ├── history.py     # File-based persistence
-│   └── content.py     # Title/copy/tags generation
+│   ├── content.py     # Title/copy/tags generation
+│   └── feishu_service.py  # Feishu/Lark workspace integration (optional)
 └── utils/
     ├── genai_client.py    # Google GenAI client wrapper
     ├── text_client.py     # Text generation client
@@ -93,9 +94,40 @@ frontend/src/
 ├── App.vue             # Root component
 ├── components/         # Reusable Vue components
 ├── stores/             # Pinia state management
+│   ├── generator.ts    # Main workflow state (topic → outline → images → result)
+│   ├── layout.ts       # UI layout state (sidebar collapse)
+│   ├── reference.ts    # Reference image management
+│   └── analysis.ts     # Content analysis features
 ├── views/              # Page components
-└── router/             # Vue Router configuration
+├── router/             # Vue Router configuration
+├── api/                # API client and type definitions
+├── types/              # TypeScript type definitions
+└── composables/        # Vue composables (e.g., useProviderForm)
 ```
+
+**Frontend Configuration:**
+- TypeScript path alias: `@/*` → `./src/*` (use `@/stores/...` in imports)
+- Vite dev server proxies `/api` requests to `http://localhost:12398`
+- Strict TypeScript enabled with `noUnusedLocals` and `noUnusedParameters`
+
+### State Management Patterns
+
+The frontend uses Pinia for state management with the following key stores:
+
+**Generator Store** ([`stores/generator.ts`](frontend/src/stores/generator.ts)):
+- Manages the complete workflow: `input` → `outline` → `generating` → `result`
+- Auto-saves to localStorage on every state change (via `watch`)
+- Persists: topic, outline, images, progress, taskId, recordId, content
+- Excludes: `userImages` (File objects cannot be serialized)
+- Methods for page manipulation: `updatePage`, `deletePage`, `addPage`, `insertPage`, `movePage`
+
+**Layout Store** ([`stores/layout.ts`](frontend/src/stores/layout.ts)):
+- Manages sidebar collapse state with localStorage persistence
+- Simple boolean toggle for responsive UI
+
+**Reference & Analysis Stores**:
+- Reference store manages image library for style reference
+- Analysis store handles content analysis features
 
 ### Key Design Patterns
 
@@ -109,11 +141,24 @@ frontend/src/
 
 All APIs are prefixed with `/api`:
 
+**Core Generation:**
 - **Outline**: `POST /api/outline` - Generate outline from topic (supports image uploads)
 - **Images**: `POST /api/generate`, `GET /api/images/<task_id>/<filename>`, `POST /api/retry`, `POST /api/regenerate`
-- **History**: `GET/POST/PUT/DELETE /api/history`, `GET /api/history/<record_id>/download`
-- **Config**: `GET/POST /api/config`, `POST /api/config/test`
 - **Content**: `POST /api/content` - Generate titles, copy, tags
+
+**History Management:**
+- **History**: `GET/POST/PUT/DELETE /api/history`, `GET /api/history/<record_id>/download`
+- **Health**: `GET /api/health` - Docker health check endpoint
+
+**Configuration:**
+- **Config**: `GET/POST /api/config`, `POST /api/config/test`
+
+**Feishu Integration (Optional):**
+- **OAuth**: `GET /api/oauth/authorize`, `GET /api/oauth/callback`
+- **Reference**: `GET /api/reference/records`, `GET /api/reference/stats`, `POST /api/reference/sync`
+
+**Analysis:**
+- **Analysis**: `GET /api/analysis/pending` - CRUD for pending analysis notes
 
 ## Configuration
 
@@ -121,6 +166,7 @@ All APIs are prefixed with `/api`:
 
 - `text_providers.yaml` - Text generation API settings (Gemini, OpenAI-compatible)
 - `image_providers.yaml` - Image generation API settings
+- `feishu_providers.yaml` - Feishu (Lark) workspace integration settings (optional)
 
 **Structure:**
 ```yaml
