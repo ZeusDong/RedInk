@@ -222,4 +222,142 @@ def create_analysis_blueprint():
             'data': results
         })
 
+    # ==================== Draft Management API ====================
+
+    @analysis_bp.route('/draft', methods=['GET'])
+    def get_draft():
+        """
+        获取指定记录的草稿数据
+
+        GET /api/analysis/draft?record_id={id}
+        """
+        record_id = request.args.get('record_id')
+        if not record_id:
+            return jsonify({'success': False, 'error': '缺少 record_id 参数'}), 400
+
+        service = get_analysis_service()
+        draft = service.get_draft(record_id)
+
+        if draft:
+            return jsonify({
+                'success': True,
+                'data': draft
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'data': None
+            })
+
+    @analysis_bp.route('/draft', methods=['POST'])
+    def save_draft():
+        """
+        保存草稿
+
+        POST /api/analysis/draft
+        Body: {...草稿数据...}
+        """
+        logger.info("[ANALYSIS_ROUTES] POST /api/analysis/draft - Saving draft")
+        try:
+            data = request.get_json()
+            logger.debug(f"[ANALYSIS_ROUTES] Request data: {data}")
+
+            if not data or 'record_id' not in data:
+                logger.warning("[ANALYSIS_ROUTES] Missing 'record_id' parameter in request")
+                return jsonify({'success': False, 'error': '缺少 record_id 参数'}), 400
+
+            service = get_analysis_service()
+            draft = service.save_draft(data)
+
+            logger.info(f"[ANALYSIS_ROUTES] Draft saved successfully: record_id={data['record_id']}")
+            return jsonify({
+                'success': True,
+                'data': draft,
+                'message': '草稿已保存'
+            })
+        except Exception as e:
+            logger.error(f"[ANALYSIS_ROUTES] Error in save_draft: {e}", exc_info=True)
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @analysis_bp.route('/submit', methods=['POST'])
+    def submit_analysis():
+        """
+        提交分析
+
+        POST /api/analysis/submit
+        Body: {...分析数据...}
+        """
+        logger.info("[ANALYSIS_ROUTES] POST /api/analysis/submit - Submitting analysis")
+        try:
+            data = request.get_json()
+            logger.debug(f"[ANALYSIS_ROUTES] Request data: {data}")
+
+            if not data or 'record_id' not in data:
+                logger.warning("[ANALYSIS_ROUTES] Missing 'record_id' parameter in request")
+                return jsonify({'success': False, 'error': '缺少 record_id 参数'}), 400
+
+            service = get_analysis_service()
+            result = service.submit_analysis(data)
+
+            logger.info(f"[ANALYSIS_ROUTES] Analysis submitted successfully: record_id={data['record_id']}")
+            return jsonify({
+                'success': True,
+                'data': result,
+                'message': '分析已提交'
+            })
+        except Exception as e:
+            logger.error(f"[ANALYSIS_ROUTES] Error in submit_analysis: {e}", exc_info=True)
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    # ==================== Visual Description Generation ====================
+
+    @analysis_bp.route('/visual-desc', methods=['POST'])
+    def generate_visual_description():
+        """
+        AI 生成视觉描述
+
+        POST /api/analysis/visual-desc
+        Body: {
+            "record_id": str,
+            "image_indices": int[]  # -1=封面图, 0,1,2...=内容图
+        }
+        """
+        logger.info("[ANALYSIS_ROUTES] POST /api/analysis/visual-desc - Generating visual description")
+        try:
+            data = request.get_json()
+            logger.debug(f"[ANALYSIS_ROUTES] Request data: {data}")
+
+            if not data or 'record_id' not in data:
+                logger.warning("[ANALYSIS_ROUTES] Missing 'record_id' parameter in request")
+                return jsonify({'success': False, 'error': '缺少 record_id 参数'}), 400
+
+            record_id = data['record_id']
+            image_indices = data.get('image_indices', [])
+
+            if not image_indices:
+                logger.warning("[ANALYSIS_ROUTES] Missing 'image_indices' parameter in request")
+                return jsonify({'success': False, 'error': '缺少 image_indices 参数'}), 400
+
+            service = get_analysis_service()
+            result = service.generate_visual_description(record_id, image_indices)
+
+            if 'error' in result:
+                logger.warning(f"[ANALYSIS_ROUTES] Visual description generation failed: {result['error']}")
+                return jsonify({
+                    'success': False,
+                    'error': result['error']
+                }), 500
+
+            logger.info(f"[ANALYSIS_ROUTES] Visual description generated successfully: record_id={record_id}")
+            return jsonify({
+                'success': True,
+                'data': result
+            })
+        except ValueError as e:
+            logger.error(f"[ANALYSIS_ROUTES] ValueError in generate_visual_description: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 404
+        except Exception as e:
+            logger.error(f"[ANALYSIS_ROUTES] Error in generate_visual_description: {e}", exc_info=True)
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     return analysis_bp

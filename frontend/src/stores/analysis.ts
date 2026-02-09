@@ -49,6 +49,30 @@ export interface AnalysisState {
 
   // 初始化状态
   initialized: boolean
+
+  // 草稿数据缓存
+  draftCache: Map<string, any>
+}
+
+/**
+ * 分析草稿数据类型
+ */
+export interface AnalysisDraft {
+  id: string
+  record_id: string
+  status: 'draft' | 'analyzing' | 'completed'
+  industry: string
+  follower_count: number
+  published_at: string | null
+  likes_count: number
+  saves_count: number
+  comments_count: number
+  title: string
+  content: string
+  visual_description: string
+  top_comments: string[]
+  created_at?: string
+  updated_at?: string
 }
 
 export const useAnalysisStore = defineStore('analysis', {
@@ -59,7 +83,8 @@ export const useAnalysisStore = defineStore('analysis', {
     analysisResults: new Map(),
     sidebarExpanded: false,
     loading: false,
-    initialized: false
+    initialized: false,
+    draftCache: new Map()
   }),
 
   getters: {
@@ -254,6 +279,101 @@ export const useAnalysisStore = defineStore('analysis', {
      */
     clearSelection() {
       this.selectedRecord = null
+    },
+
+    // ==================== Draft Management ====================
+
+    /**
+     * 获取指定记录的草稿数据
+     */
+    async getDraft(recordId: string): Promise<AnalysisDraft | null> {
+      try {
+        const response = await fetch(`/api/analysis/draft?record_id=${recordId}`)
+        const data = await response.json()
+
+        if (data.success && data.data) {
+          this.draftCache.set(recordId, data.data)
+          return data.data
+        }
+        return null
+      } catch (e) {
+        console.error('[AnalysisStore] Failed to get draft:', e)
+        return null
+      }
+    },
+
+    /**
+     * 保存草稿
+     */
+    async saveDraft(draftData: Partial<AnalysisDraft>): Promise<boolean> {
+      try {
+        const response = await fetch('/api/analysis/draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(draftData)
+        })
+        const data = await response.json()
+
+        if (data.success) {
+          this.draftCache.set(draftData.record_id!, data.data)
+          return true
+        }
+        return false
+      } catch (e) {
+        console.error('[AnalysisStore] Failed to save draft:', e)
+        return false
+      }
+    },
+
+    /**
+     * 提交分析
+     */
+    async submitAnalysis(draftData: Partial<AnalysisDraft>): Promise<boolean> {
+      try {
+        const response = await fetch('/api/analysis/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(draftData)
+        })
+        const data = await response.json()
+
+        if (data.success) {
+          this.draftCache.set(draftData.record_id!, data.data)
+          // 标记为分析中
+          this.loading = true
+          // TODO: 开始轮询分析结果
+          return true
+        }
+        return false
+      } catch (e) {
+        console.error('[AnalysisStore] Failed to submit analysis:', e)
+        return false
+      }
+    },
+
+    /**
+     * 生成视觉描述
+     */
+    async generateVisualDescription(recordId: string, imageIndices: number[]): Promise<string | null> {
+      try {
+        const response = await fetch('/api/analysis/visual-desc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            record_id: recordId,
+            image_indices: imageIndices
+          })
+        })
+        const data = await response.json()
+
+        if (data.success && data.data?.description) {
+          return data.data.description
+        }
+        return null
+      } catch (e) {
+        console.error('[AnalysisStore] Failed to generate visual description:', e)
+        return null
+      }
     }
   }
 })

@@ -375,7 +375,7 @@ function handleNextPage() {
 
 // 对标分析
 function handleAnalyze(recordId: string) {
-  const record = referenceStore.records.find(r => r.record_id === recordId)
+  const record = analysisStore.pendingRecords.find(r => r.record_id === recordId)
   if (record) {
     analysisStore.selectRecord(record)
   }

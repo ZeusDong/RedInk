@@ -45,7 +45,7 @@
 
           <div class="action-area">
             <p class="hint">该笔记尚未进行分析</p>
-            <button class="analyze-btn" @click="handleAnalyze" :disabled="store.loading">
+            <button class="analyze-btn" @click="openConfirmModal" :disabled="store.loading">
               <svg v-if="!store.loading" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
               </svg>
@@ -71,12 +71,26 @@
       </div>
     </aside>
   </Transition>
+
+  <!-- AI分析确认弹窗 -->
+  <AnalyzeConfirmModal
+    :visible="confirmModalVisible"
+    :record="store.selectedRecord"
+    @close="closeConfirmModal"
+    @save-draft="handleSaveDraft"
+    @submit="handleSubmit"
+  />
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useAnalysisStore } from '@/stores/analysis'
+import AnalyzeConfirmModal from './AnalyzeConfirmModal.vue'
 
 const store = useAnalysisStore()
+
+// 确认弹窗状态
+const confirmModalVisible = ref(false)
 
 // 格式化数字
 function formatCount(count: number): string {
@@ -91,10 +105,26 @@ function handleClose() {
   store.clearSelection()
 }
 
-// 开始分析（占位）
-function handleAnalyze() {
-  // 后续实现
-  console.log('开始分析:', store.selectedRecord?.record_id)
+// 打开确认弹窗
+function openConfirmModal() {
+  confirmModalVisible.value = true
+}
+
+// 关闭确认弹窗
+function closeConfirmModal() {
+  confirmModalVisible.value = false
+}
+
+// 保存草稿
+function handleSaveDraft(data: any) {
+  console.log('草稿已保存:', data)
+  // TODO: 可以添加 toast 提示
+}
+
+// 提交分析
+function handleSubmit(data: any) {
+  console.log('分析已提交:', data)
+  // TODO: 可以添加 toast 提示，并轮询分析结果
 }
 </script>
 
