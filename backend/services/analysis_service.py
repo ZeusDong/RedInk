@@ -559,88 +559,99 @@ class AnalysisService:
             logger.warning(f"[ANALYSIS_SERVICE] Failed to configure Feishu service: {e}")
             # 继续执行，因为图片可能是本地文件或外部 URL
 
+        # 图片代理服务（用于处理小红书403反盗链问题）
+        from backend.services.image_proxy_service import get_image_proxy_service
+        image_proxy_service = get_image_proxy_service()
+
         def analyze_image(image_type: str, image_url: str) -> tuple[str, str]:
             """分析单张图片"""
+            import requests
+            import tempfile
+            import os
             try:
                 # 获取图片二进制数据
                 image_bytes = None
                 load_error = None
 
                 if image_url.startswith('/api/reference/image/'):
-                    # Feishu 代理 URL
+                    # Feishu 代理 URL（封面图、头像等）
                     file_token = image_url.split('/')[-1]
                     logger.debug(f"[ANALYSIS_SERVICE] Downloading Feishu image: {file_token}")
                     image_bytes, _ = feishu_service.download_image(file_token)
                     if not image_bytes:
                         load_error = f"飞书图片下载失败 (token: {file_token})"
                 elif image_url.startswith('/api/reference-images/'):
-                    # 本地文件
+                    # 本地文件 - 上传到图床后使用图床URL
                     from backend.config import Config
                     parts = image_url.split('/')
                     rec_id, filename = parts[4], parts[5]
                     image_path = Config.get_reference_images_path() / rec_id / filename
-                    logger.debug(f"[ANALYSIS_SERVICE] Reading local image: {image_path}")
+                    logger.debug(f"[ANALYSIS_SERVICE] Local image path: {image_path}")
                     if image_path.exists():
-                        image_bytes = image_path.read_bytes()
+                        # 上传到图床
+                        logger.debug(f"[ANALYSIS_SERVICE] Uploading local image to proxy: {image_path}")
+                        upload_success, upload_result = image_proxy_service.upload_image(str(image_path))
+                        if upload_success:
+                            proxy_url = upload_result
+                            logger.info(f"[ANALYSIS_SERVICE] Local image uploaded to proxy: {proxy_url}")
+                            # 使用图床URL获取图片
+                            proxy_response = requests.get(proxy_url, timeout=30)
+                            if proxy_response.status_code == 200:
+                                image_bytes = proxy_response.content
+                                logger.debug(f"[ANALYSIS_SERVICE] Successfully fetched image from proxy: {proxy_url}")
+                            else:
+                                load_error = f"图床URL请求失败 ({proxy_response.status_code})"
+                                logger.warning(f"[ANALYSIS_SERVICE] {image_type} 图床URL返回{proxy_response.status_code}")
+                        else:
+                            load_error = f"图床上传失败: {upload_result}"
+                            logger.warning(f"[ANALYSIS_SERVICE] {image_type} 图床上传失败: {upload_result}")
                     else:
                         load_error = f"本地文件不存在: {image_path}"
                 else:
-                    # 外部 URL（小红书反盗链保护，可能返回403）
-                    import requests
-                    logger.debug(f"[ANALYSIS_SERVICE] Fetching external URL: {image_url}")
+                    # 外部 URL - 直接使用 backend/static/reference_images/{record_id} 中的本地文件
+                    logger.debug(f"[ANALYSIS_SERVICE] {image_type} 使用本地reference_images目录: {record_id}")
+                    try:
+                        from backend.config import Config
+                        ref_images_dir = Config.get_reference_images_path() / record_id
 
-                    # 尝试多种请求头，模拟真实浏览器访问
-                    headers_variants = [
-                        # Chrome on Windows
-                        {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                            'Referer': 'https://www.xiaohongshu.com/',
-                            'Accept': 'image/webp,image/apng,image/svg+xml,image/*;q=0.8',
-                            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                            'Accept-Encoding': 'gzip, deflate, br',
-                            'Connection': 'keep-alive',
-                        },
-                        # Safari on macOS
-                        {
-                            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
-                            'Referer': 'https://www.xiaohongshu.com/',
-                            'Accept': 'image/webp,image/apng,image/svg+xml,image/*;q=0.8',
-                        },
-                        # Mobile
-                        {
-                            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1',
-                            'Referer': 'https://www.xiaohongshu.com/',
-                            'Accept': 'image/webp,image/apng,image/svg+xml,image/*;q=0.8',
-                        }
-                    ]
+                        if ref_images_dir.exists():
+                            # 获取目录中的图片文件
+                            image_files = list(ref_images_dir.glob('*.jpg')) + \
+                                         list(ref_images_dir.glob('*.png')) + \
+                                         list(ref_images_dir.glob('*.webp')) + \
+                                         list(ref_images_dir.glob('*.gif'))
 
-                    image_bytes = None
-                    load_error = None
+                            if image_files:
+                                # 使用第一个找到的图片文件
+                                local_path = image_files[0]
+                                logger.debug(f"[ANALYSIS_SERVICE] Using local image: {local_path}")
 
-                    # 依次尝试不同的请求头
-                    for i, headers in enumerate(headers_variants):
-                        try:
-                            response = requests.get(image_url, headers=headers, timeout=30)
-                            if response.status_code == 200:
-                                image_bytes = response.content
-                                logger.debug(f"[ANALYSIS_SERVICE] External URL fetched successfully with header variant {i+1}")
-                                break
-                            elif response.status_code == 403:
-                                # 403 通常表示链接已失效或被反爬虫阻止
-                                if i < len(headers_variants) - 1:
-                                    continue  # 尝试下一个header变体
+                                # 上传到图床
+                                upload_success, upload_result = image_proxy_service.upload_image(str(local_path))
+
+                                if upload_success:
+                                    proxy_url = upload_result
+                                    logger.info(f"[ANALYSIS_SERVICE] Local image uploaded to proxy: {proxy_url}")
+                                    # 使用图床URL获取图片
+                                    proxy_response = requests.get(proxy_url, timeout=30)
+                                    if proxy_response.status_code == 200:
+                                        image_bytes = proxy_response.content
+                                        logger.debug(f"[ANALYSIS_SERVICE] Successfully fetched image from proxy: {proxy_url}")
+                                    else:
+                                        load_error = f"图床URL请求失败 ({proxy_response.status_code})"
+                                        logger.warning(f"[ANALYSIS_SERVICE] {image_type} 图床URL返回{proxy_response.status_code}")
                                 else:
-                                    load_error = f"外部链接已失效 (403禁止访问，可能原因：1. 小红书图片链接已过期 2. 触发了反爬虫保护"
-                                    logger.warning(f"[ANALYSIS_SERVICE] {image_type} 外部URL返回403: {image_url[:50]}...")
+                                    load_error = f"图床上传失败: {upload_result}"
+                                    logger.warning(f"[ANALYSIS_SERVICE] {image_type} 图床上传失败: {upload_result}")
                             else:
-                                load_error = f"外部URL请求失败 (状态码: {response.status_code})"
-                                logger.warning(f"[ANALYSIS_SERVICE] {image_type} 外部URL返回{response.status_code}: {image_url[:50]}...")
-                        except Exception as e:
-                            if i < len(headers_variants) - 1:
-                                continue  # 尝试下一个header变体
-                            else:
-                                load_error = f"请求异常: {str(e)}"
-                                logger.warning(f"[ANALYSIS_SERVICE] {image_type} 外部URL请求异常: {e}")
+                                load_error = f"本地目录无图片文件: {ref_images_dir}"
+                                logger.warning(f"[ANALYSIS_SERVICE] {image_type} 本地目录无图片: {ref_images_dir}")
+                        else:
+                            load_error = f"本地目录不存在: {ref_images_dir}"
+                            logger.warning(f"[ANALYSIS_SERVICE] {image_type} 本地目录不存在: {ref_images_dir}")
+                    except Exception as e:
+                        load_error = f"本地文件处理异常: {str(e)}"
+                        logger.warning(f"[ANALYSIS_SERVICE] {image_type} 本地文件处理异常: {str(e)}")
 
                 if image_bytes:
                     prompt = format_image_analysis_prompt(image_type)

@@ -214,3 +214,37 @@ export async function getAnalysisResult(recordId: string): Promise<ApiResponse<a
     }
   }
 }
+
+// ==================== Image Proxy Upload API ====================
+
+/**
+ * Upload image to image proxy service
+ *
+ * @param file - Image file to upload
+ * @returns Promise with upload response
+ */
+export async function uploadImageToProxy(file: File): Promise<ImageProxyUploadResponse> {
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await fetch('/api/image-proxy/upload', {
+      method: 'POST',
+      body: formData
+    })
+
+    const data = await response.json()
+
+    return {
+      success: response.ok,
+      url: data.url,
+      error: data.error
+    }
+  } catch (error: any) {
+    console.error('[Image Proxy API] Upload failed:', error)
+    return {
+      success: false,
+      error: '上传失败，请检查网络连接'
+    }
+  }
+}

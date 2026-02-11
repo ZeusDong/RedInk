@@ -40,6 +40,7 @@ def create_api_blueprint():
     from .reference_routes import create_reference_blueprint
     from .reference_test_routes import create_reference_test_blueprint
     from .oauth_routes import create_oauth_blueprint
+    from .image_proxy_routes import create_image_proxy_blueprint
 
     # 显式捕获 analysis_routes 导入错误
     try:
@@ -69,6 +70,8 @@ def create_api_blueprint():
     logger.debug("   ✅ reference_test_routes registered")
     api_bp.register_blueprint(create_oauth_blueprint())
     logger.debug("   ✅ oauth_routes registered")
+    api_bp.register_blueprint(create_image_proxy_blueprint())
+    logger.debug("   ✅ image_proxy_routes registered")
 
     # 显式捕获 analysis_routes 蓝图创建错误
     try:
