@@ -136,33 +136,101 @@
             <section class="form-section">
               <h3 class="section-title">【视觉与互动】</h3>
 
+              <!-- 图片选择区域 -->
+              <div v-if="hasImages" class="image-selection-area">
+                <!-- 封面图 -->
+                <div class="image-group cover-group">
+                  <label class="group-label">【封面图】</label>
+                  <div class="image-checkbox" :class="{ checked: coverSelected, error: coverLoadError }">
+                    <input type="checkbox" v-model="coverSelected" />
+                    <img
+                      v-if="record?.cover_image"
+                      :src="record.cover_image"
+                      @error="handleCoverError"
+                      alt="封面图"
+                    />
+                    <div v-else class="image-placeholder">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                        <polyline points="21 15 16 10 5 21"></polyline>
+                      </svg>
+                    </div>
+                    <span v-if="coverLoadError" class="load-error-icon" title="图片加载失败">⚠️</span>
+                  </div>
+                </div>
+
+                <!-- 内容图 -->
+                <div v-if="record?.images?.length" class="image-group content-group">
+                  <label class="group-label">【内容图】({{ record.images.length }}张)</label>
+                  <div class="content-images-grid">
+                    <div
+                      v-for="(img, idx) in record.images"
+                      :key="idx"
+                      class="image-checkbox"
+                      :class="{ checked: isContentImageSelected(idx), error: contentLoadErrors.has(idx) }"
+                    >
+                      <input
+                        type="checkbox"
+                        :checked="isContentImageSelected(idx)"
+                        @change="toggleContentImage(idx)"
+                      />
+                      <img
+                        v-if="!contentLoadErrors.has(idx)"
+                        :src="img"
+                        @error="() => handleContentError(idx)"
+                        :alt="`内容图${idx + 1}`"
+                      />
+                      <div v-else class="image-error-placeholder" :title="img">
+                        <span class="error-text">加载失败</span>
+                      </div>
+                      <span class="image-label">图{{ idx + 1 }}</span>
+                      <span v-if="contentLoadErrors.has(idx)" class="load-error-icon" title="图片加载失败">⚠️</span>
+                    </div>
+                  </div>
+                  <div class="quick-actions">
+                    <button type="button" @click="selectAllContent">全选</button>
+                    <button type="button" @click="clearAllContent">清空选择</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 无图片提示 -->
+              <div v-else class="no-images-message">
+                <p>⚠️ 暂无可用图片</p>
+                <p>该笔记没有封面图或内容图，请手动输入视觉描述</p>
+              </div>
+
+              <!-- 操作栏 -->
+              <div v-if="hasImages" class="visual-action-bar">
+                <span class="selection-count">已选择 {{ selectedCount }} 张图片</span>
+                <button
+                  type="button"
+                  class="btn-generate"
+                  @click="handleGenerateVisualDesc"
+                  :disabled="selectedCount === 0 || generatingVisual"
+                >
+                  <svg v-if="!generatingVisual" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                  </svg>
+                  <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                  </svg>
+                  {{ generatingVisual ? '生成中...' : '生成视觉描述' }}
+                </button>
+              </div>
+
+              <!-- 视觉描述 -->
               <div class="form-group">
                 <label class="form-label required">视觉描述</label>
-                <div class="visual-desc-wrapper">
-                  <textarea
-                    v-model="formData.visual_description"
-                    class="form-textarea"
-                    :class="{ error: errors.visual_description }"
-                    placeholder="描述图片的视觉风格、配色、构图等..."
-                    rows="4"
-                  ></textarea>
-                  <button
-                    v-if="record?.cover_image || (record?.images?.length > 0)"
-                    class="ai-generate-btn"
-                    @click="handleGenerateVisualDesc"
-                    :disabled="generatingVisual"
-                    title="AI 生成视觉描述"
-                  >
-                    <svg v-if="!generatingVisual" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
-                      <path d="M9 12h6"></path>
-                    </svg>
-                    <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-                      <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
-                    </svg>
-                    {{ generatingVisual ? '生成中...' : 'AI 生成' }}
-                  </button>
-                </div>
+                <textarea
+                  v-model="formData.visual_description"
+                  class="form-textarea"
+                  :class="{ error: errors.visual_description }"
+                  :placeholder="hasImages ? '请先选择图片，然后点击「生成视觉描述」' : '描述图片的视觉风格、配色、构图等...'"
+                  :readonly="generatingVisual"
+                  rows="4"
+                ></textarea>
                 <span v-if="errors.visual_description" class="form-error">{{ errors.visual_description }}</span>
               </div>
 
@@ -217,7 +285,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted, computed } from 'vue'
 import type { ReferenceRecord } from '@/api'
 
 interface Props {
@@ -257,14 +325,58 @@ const saving = ref(false)
 const submitting = ref(false)
 const generatingVisual = ref(false)
 
+// ========== 新增：图片选择状态 ==========
+
+// 选中的图片索引（-1=封面，0+=内容图）
+const selectedImageIndices = ref<number[]>([-1])  // 默认选中封面
+
+// 图片加载错误状态
+const coverLoadError = ref(false)
+const contentLoadErrors = ref<Set<number>>(new Set())
+
+// 本地图片检查状态
+const hasCheckedLocal = ref(false)
+
+// ========== 新增：计算属性 ==========
+
+// 是否有可用图片
+const hasImages = computed(() => {
+  return !!(props.record?.cover_image || (props.record?.images && props.record.images.length > 0))
+})
+
+// 已选中图片数量
+const selectedCount = computed(() => {
+  return selectedImageIndices.value.length
+})
+
+// 封面图是否选中（双向绑定computed）
+const coverSelected = computed({
+  get: () => selectedImageIndices.value.includes(-1),
+  set: (val: boolean) => {
+    if (val && !selectedImageIndices.value.includes(-1)) {
+      selectedImageIndices.value.push(-1)
+    } else if (!val) {
+      selectedImageIndices.value = selectedImageIndices.value.filter(i => i !== -1)
+    }
+  }
+})
+
 // 初始化表单数据
 onMounted(() => {
+  checkLocalImages()
   loadDraftOrRecord()
 })
 
 // 监听 record 变化
-watch(() => props.record, () => {
-  if (props.record) {
+watch(() => props.record, (newRecord) => {
+  if (newRecord) {
+    // Debug: 打印图片信息
+    console.log('[AnalyzeConfirmModal] Record changed, images count:', newRecord.images?.length || 0)
+    console.log('[AnalyzeConfirmModal] Image URLs:', newRecord.images)
+    console.log('[AnalyzeConfirmModal] Cover image:', newRecord.cover_image)
+    // 重置本地检查状态并检查本地图片
+    hasCheckedLocal.value = false
+    checkLocalImages()
     loadDraftOrRecord()
   }
 })
@@ -423,20 +535,20 @@ async function handleSubmit() {
 async function handleGenerateVisualDesc() {
   if (!props.record) return
 
+  // 验证：至少选择一张图片
+  if (selectedCount.value === 0) {
+    alert('请先选择至少一张图片')
+    return
+  }
+
   generatingVisual.value = true
   try {
-    // 默认选择封面图和第一张内容图
-    const imageIndices = [-1]
-    if (props.record.images && props.record.images.length > 0) {
-      imageIndices.push(0)
-    }
-
     const response = await fetch('/api/analysis/visual-desc', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         record_id: props.record.record_id,
-        image_indices: imageIndices
+        image_indices: selectedImageIndices.value  // 使用用户选择的索引
       })
     })
     const result = await response.json()
@@ -469,6 +581,93 @@ function handleClose() {
     return
   }
   emit('close')
+}
+
+// ========== 新增：图片选择方法 ==========
+
+/**
+ * 检查内容图是否被选中
+ */
+function isContentImageSelected(idx: number): boolean {
+  return selectedImageIndices.value.includes(idx)
+}
+
+/**
+ * 切换内容图选中状态
+ */
+function toggleContentImage(idx: number): void {
+  const index = selectedImageIndices.value.indexOf(idx)
+  if (index > -1) {
+    selectedImageIndices.value.splice(index, 1)
+  } else {
+    selectedImageIndices.value.push(idx)
+  }
+}
+
+/**
+ * 全选内容图
+ */
+function selectAllContent(): void {
+  if (!props.record?.images) return
+  props.record.images.forEach((_, idx) => {
+    if (!selectedImageIndices.value.includes(idx)) {
+      selectedImageIndices.value.push(idx)
+    }
+  })
+}
+
+/**
+ * 清空内容图选择
+ */
+function clearAllContent(): void {
+  selectedImageIndices.value = selectedImageIndices.value.filter(i => i === -1)
+}
+
+/**
+ * 处理封面图加载失败
+ */
+function handleCoverError(): void {
+  console.warn('[AnalyzeConfirmModal] Cover image failed to load:', props.record?.cover_image)
+  coverLoadError.value = true
+}
+
+/**
+ * 处理内容图加载失败
+ */
+function handleContentError(idx: number): void {
+  const imgUrl = props.record?.images?.[idx]
+  console.warn(`[AnalyzeConfirmModal] Content image ${idx} failed to load:`, imgUrl)
+  contentLoadErrors.value.add(idx)
+}
+
+/**
+ * 检查本地是否有图片
+ */
+async function checkLocalImages() {
+  if (!props.record) return
+
+  try {
+    const { checkReferenceImages } = await import('@/api')
+    const result = await checkReferenceImages(props.record.record_id)
+
+    // 先清空数据中的图片链接（可能是过期的飞书图片）
+    if (props.record) {
+      props.record.images = []
+    }
+
+    // 只使用本地存在的图片
+    if (result.exists && result.images.length > 0) {
+      if (props.record) {
+        props.record.images = result.images
+      }
+    }
+
+    hasCheckedLocal.value = true
+    console.log('[AnalyzeConfirmModal] Local images check result:', result)
+  } catch (e) {
+    console.error('[AnalyzeConfirmModal] Failed to check local images:', e)
+    hasCheckedLocal.value = true
+  }
 }
 </script>
 
@@ -828,5 +1027,232 @@ function handleClose() {
 
 .btn-primary svg.spin {
   animation: spin 1s linear infinite;
+}
+
+/* ========== 图片选择区域 ========== */
+.image-selection-area {
+  margin-bottom: 16px;
+}
+
+.image-group {
+  margin-bottom: 16px;
+}
+
+.group-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+/* 图片复选框 */
+.image-checkbox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: white;
+}
+
+.image-checkbox.checked {
+  border-color: #ff2442;
+  background: #ffeee8;
+}
+
+.image-checkbox:hover {
+  transform: scale(1.05);
+}
+
+.image-checkbox input[type="checkbox"] {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.image-checkbox img {
+  display: block;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+/* 封面图尺寸 */
+.cover-group .image-checkbox {
+  display: inline-flex;
+}
+
+.cover-group .image-checkbox img {
+  width: 80px;
+  height: 80px;
+}
+
+/* 内容图网格 */
+.content-images-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.content-images-grid .image-checkbox {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+
+.content-images-grid .image-checkbox img {
+  width: 60px;
+  height: 60px;
+}
+
+.image-label {
+  font-size: 11px;
+  color: #666;
+  text-align: center;
+  margin-top: 2px;
+}
+
+.load-error-icon {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.image-checkbox.error {
+  opacity: 0.7;
+}
+
+.image-placeholder {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  border-radius: 4px;
+  color: #999;
+}
+
+.image-error-placeholder {
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff0f0;
+  border-radius: 4px;
+  color: #ff2442;
+}
+
+.image-error-placeholder .error-text {
+  font-size: 10px;
+  text-align: center;
+  padding: 4px;
+}
+
+/* 快捷操作 */
+.quick-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.quick-actions button {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: 1px dashed #ddd;
+  background: transparent;
+  color: #666;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.quick-actions button:hover {
+  border-color: #ff2442;
+  color: #ff2442;
+}
+
+/* 操作栏 */
+.visual-action-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: #f8f7f5;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.selection-count {
+  font-size: 13px;
+  color: #666;
+}
+
+.btn-generate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #ff2442;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-generate:hover:not(:disabled) {
+  background: #e61e3a;
+}
+
+.btn-generate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-generate svg.spin {
+  animation: spin 1s linear infinite;
+}
+
+/* 无图片提示 */
+.no-images-message {
+  padding: 16px;
+  background: #fff8f0;
+  border: 1px solid #ffcc00;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.no-images-message p {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #666;
+}
+
+/* 响应式：移动端调整为2列 */
+@media (max-width: 480px) {
+  .content-images-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>

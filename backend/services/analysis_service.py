@@ -549,30 +549,98 @@ class AnalysisService:
         results = []
         feishu_service = get_feishu_service()
 
+        # 配置飞书服务（需要加载 OAuth 凭据以支持 token 自动刷新）
+        try:
+            workspace_name = Config.get_active_feishu_workspace()
+            workspace_config = Config.get_feishu_workspace_config(workspace_name)
+            feishu_service.configure(workspace_name, workspace_config)
+            logger.debug(f"[ANALYSIS_SERVICE] Configured Feishu service for workspace: {workspace_name}")
+        except Exception as e:
+            logger.warning(f"[ANALYSIS_SERVICE] Failed to configure Feishu service: {e}")
+            # 继续执行，因为图片可能是本地文件或外部 URL
+
         def analyze_image(image_type: str, image_url: str) -> tuple[str, str]:
             """分析单张图片"""
             try:
                 # 获取图片二进制数据
                 image_bytes = None
+                load_error = None
+
                 if image_url.startswith('/api/reference/image/'):
                     # Feishu 代理 URL
                     file_token = image_url.split('/')[-1]
+                    logger.debug(f"[ANALYSIS_SERVICE] Downloading Feishu image: {file_token}")
                     image_bytes, _ = feishu_service.download_image(file_token)
+                    if not image_bytes:
+                        load_error = f"飞书图片下载失败 (token: {file_token})"
                 elif image_url.startswith('/api/reference-images/'):
                     # 本地文件
                     from backend.config import Config
                     parts = image_url.split('/')
                     rec_id, filename = parts[4], parts[5]
                     image_path = Config.get_reference_images_path() / rec_id / filename
-                    image_bytes = image_path.read_bytes()
+                    logger.debug(f"[ANALYSIS_SERVICE] Reading local image: {image_path}")
+                    if image_path.exists():
+                        image_bytes = image_path.read_bytes()
+                    else:
+                        load_error = f"本地文件不存在: {image_path}"
                 else:
-                    # 外部 URL
+                    # 外部 URL（小红书反盗链保护，可能返回403）
                     import requests
-                    response = requests.get(image_url, headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Referer': 'https://www.xiaohongshu.com/'
-                    }, timeout=30)
-                    image_bytes = response.content
+                    logger.debug(f"[ANALYSIS_SERVICE] Fetching external URL: {image_url}")
+
+                    # 尝试多种请求头，模拟真实浏览器访问
+                    headers_variants = [
+                        # Chrome on Windows
+                        {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                            'Referer': 'https://www.xiaohongshu.com/',
+                            'Accept': 'image/webp,image/apng,image/svg+xml,image/*;q=0.8',
+                            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                            'Accept-Encoding': 'gzip, deflate, br',
+                            'Connection': 'keep-alive',
+                        },
+                        # Safari on macOS
+                        {
+                            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+                            'Referer': 'https://www.xiaohongshu.com/',
+                            'Accept': 'image/webp,image/apng,image/svg+xml,image/*;q=0.8',
+                        },
+                        # Mobile
+                        {
+                            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1',
+                            'Referer': 'https://www.xiaohongshu.com/',
+                            'Accept': 'image/webp,image/apng,image/svg+xml,image/*;q=0.8',
+                        }
+                    ]
+
+                    image_bytes = None
+                    load_error = None
+
+                    # 依次尝试不同的请求头
+                    for i, headers in enumerate(headers_variants):
+                        try:
+                            response = requests.get(image_url, headers=headers, timeout=30)
+                            if response.status_code == 200:
+                                image_bytes = response.content
+                                logger.debug(f"[ANALYSIS_SERVICE] External URL fetched successfully with header variant {i+1}")
+                                break
+                            elif response.status_code == 403:
+                                # 403 通常表示链接已失效或被反爬虫阻止
+                                if i < len(headers_variants) - 1:
+                                    continue  # 尝试下一个header变体
+                                else:
+                                    load_error = f"外部链接已失效 (403禁止访问，可能原因：1. 小红书图片链接已过期 2. 触发了反爬虫保护"
+                                    logger.warning(f"[ANALYSIS_SERVICE] {image_type} 外部URL返回403: {image_url[:50]}...")
+                            else:
+                                load_error = f"外部URL请求失败 (状态码: {response.status_code})"
+                                logger.warning(f"[ANALYSIS_SERVICE] {image_type} 外部URL返回{response.status_code}: {image_url[:50]}...")
+                        except Exception as e:
+                            if i < len(headers_variants) - 1:
+                                continue  # 尝试下一个header变体
+                            else:
+                                load_error = f"请求异常: {str(e)}"
+                                logger.warning(f"[ANALYSIS_SERVICE] {image_type} 外部URL请求异常: {e}")
 
                 if image_bytes:
                     prompt = format_image_analysis_prompt(image_type)
@@ -580,14 +648,17 @@ class AnalysisService:
                         prompt=prompt,
                         images=[image_bytes],
                         temperature=0.7,
-                        max_output_tokens=1000
+                        max_output_tokens=4000  # 增加到4000以确保完整输出结构化分析
                     )
                     return (image_type, result)
                 else:
-                    return (image_type, f"[{image_type} 加载失败]")
+                    error_msg = load_error or f"未知原因 (URL: {image_url[:50]}...)"
+                    logger.warning(f"[ANALYSIS_SERVICE] {image_type} 图片加载失败: {error_msg}")
+                    return (image_type, f"[{image_type} 加载失败: {error_msg}]")
             except Exception as e:
-                logger.warning(f"[ANALYSIS_SERVICE] Failed to analyze {image_type}: {e}")
-                return (image_type, f"[{image_type} 分析失败: {str(e)}]")
+                error_msg = str(e)
+                logger.warning(f"[ANALYSIS_SERVICE] Failed to analyze {image_type}: {error_msg}")
+                return (image_type, f"[{image_type} 分析失败: {error_msg}]")
 
         # 使用线程池并发分析
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
