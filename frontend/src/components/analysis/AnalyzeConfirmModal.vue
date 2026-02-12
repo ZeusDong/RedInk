@@ -1226,17 +1226,17 @@ function validate(): boolean {
     isValid = false
   }
 
-  if (!formData.likes_count || formData.likes_count < 0) {
+  if (formData.likes_count == null || formData.likes_count < 0) {
     errors.metrics = '请输入有效的点赞数'
     isValid = false
   }
 
-  if (!formData.saves_count || formData.saves_count < 0) {
+  if (formData.saves_count == null || formData.saves_count < 0) {
     errors.metrics = '请输入有效的收藏数'
     isValid = false
   }
 
-  if (!formData.comments_count || formData.comments_count < 0) {
+  if (formData.comments_count == null || formData.comments_count < 0) {
     errors.metrics = '请输入有效的评论数'
     isValid = false
   }
@@ -1263,23 +1263,16 @@ function validate(): boolean {
     }
   }
 
-  // Validate top comments: at least one non-empty comment
-  if (formData.top_comments.length === 0) {
-    errors.top_comments = '请至少添加一条高赞评论'
-    isValid = false
-  } else {
-    const hasValidComment = formData.top_comments.some(c => c.content && c.content.trim())
-    if (!hasValidComment) {
-      errors.top_comments = '请至少填写一条评论内容'
-      isValid = false
-    }
-  }
+  // 高赞评论改为可选，不再验证
 
   return isValid
 }
 
 async function handleSaveDraft() {
-  if (!validate()) return
+  if (!validate()) {
+    alert('请完善表单中的必填项，确保所有标记为红色的字段都已正确填写')
+    return
+  }
 
   saving.value = true
   try {
@@ -1302,8 +1295,8 @@ async function handleSaveDraft() {
       emit('save-draft', result.data)
       // Reset unsaved flag after successful save
       hasUnsavedChanges.value = false
-      // Keep modal open and show success message
-      alert('✅ 草稿已保存成功！')
+      // Close modal after successful save
+      emit('close')
     } else {
       alert(result.error || '保存失败，请重试')
     }
@@ -1316,7 +1309,30 @@ async function handleSaveDraft() {
 }
 
 async function handleSubmit() {
-  if (!validate()) return
+  if (!validate()) {
+    alert('请完善表单中的必填项，确保所有标记为红色的字段都已正确填写')
+    return
+  }
+
+  const recordId = formData.record_id
+
+  // 检查是否正在分析中
+  if (analysisStore.isAnalyzing(recordId)) {
+    alert('该笔记正在分析中，请稍候...')
+    return
+  }
+
+  // 检查是否已有分析结果
+  if (analysisStore.hasAnalysisResult(recordId)) {
+    const confirmed = confirm(
+      '该笔记已有分析结果。\n\n' +
+      '⚠️ 点击「确定」将覆盖原有分析结果，生成新的分析。\n' +
+      '点击「取消」保留原有结果。'
+    )
+    if (!confirmed) {
+      return
+    }
+  }
 
   try {
     // 使用 store 的 submitAnalysis 方法（内部使用 SSE 流式处理）
@@ -1335,11 +1351,12 @@ async function handleSubmit() {
       emit('submit', formData)
       // Reset unsaved flag after successful submit
       hasUnsavedChanges.value = false
-      // 显示完成提示
+      // Close modal after successful analysis
       setTimeout(() => {
+        emit('close')
         progressStep.value = ''
         progressMessage.value = ''
-      }, 3000)
+      }, 1500) // Wait briefly to show success message
     } else {
       alert('提交失败，请检查数据完整性')
       // 重置进度状态

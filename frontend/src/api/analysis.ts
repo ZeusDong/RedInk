@@ -311,6 +311,34 @@ export async function getAnalysisResult(recordId: string): Promise<ApiResponse<a
   }
 }
 
+/**
+ * Get all analysis results
+ *
+ * @returns Promise with all analysis results
+ */
+export async function getAllAnalysisResults(): Promise<ApiResponse<any[]>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/results`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    const data = await response.json()
+
+    return {
+      success: data.success,
+      data: data.data || [],
+      error: data.error
+    }
+  } catch (error: any) {
+    console.error('[Analysis API] Failed to get all analysis results:', error)
+    return {
+      success: false,
+      data: [],
+      error: '网络连接失败，请检查网络设置'
+    }
+  }
+}
+
 // ==================== Image Proxy Upload API ====================
 
 /**

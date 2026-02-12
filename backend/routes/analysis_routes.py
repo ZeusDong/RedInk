@@ -34,13 +34,21 @@ def create_analysis_blueprint():
         获取所有待分析笔记
 
         GET /api/analysis/pending
+        Query params:
+            - status: 可选的状态过滤 ('pending', 'completed', 'failed')
         """
         logger.info("[ANALYSIS_ROUTES] GET /api/analysis/pending - Fetching pending notes")
         try:
             service = get_analysis_service()
             logger.debug(f"[ANALYSIS_ROUTES] Service instance: {service}")
-            notes = service.get_pending_notes()
-            logger.info(f"[ANALYSIS_ROUTES] Found {len(notes)} pending notes")
+
+            # 获取状态过滤参数
+            status = request.args.get('status')
+            if status:
+                logger.info(f"[ANALYSIS_ROUTES] Filtering by status: {status}")
+
+            notes = service.get_pending_notes(status=status)
+            logger.info(f"[ANALYSIS_ROUTES] Found {len(notes)} pending notes (status={status or 'all'})")
             return jsonify({
                 'success': True,
                 'data': notes,
@@ -121,13 +129,18 @@ def create_analysis_blueprint():
         获取待分析笔记数量
 
         GET /api/analysis/pending/count
+        Query params:
+            - status: 可选的状态过滤 ('pending', 'completed', 'failed')
         """
         service = get_analysis_service()
-        count = service.get_pending_count()
+        status = request.args.get('status')
+
+        # 获取指定状态的记录
+        notes = service.get_pending_notes(status=status)
 
         return jsonify({
             'success': True,
-            'count': count
+            'count': len(notes)
         })
 
     @analysis_bp.route('/pending/check/<record_id>', methods=['GET'])

@@ -36,6 +36,9 @@ export interface AnalysisState {
   // 待分析笔记列表（从对标文案页面选中的）
   pendingRecords: ReferenceRecord[]
 
+  // 已完成分析的笔记列表
+  completedRecords: ReferenceRecord[]
+
   // 当前选中的记录（用于分析）
   selectedRecord: ReferenceRecord | null
 
@@ -53,6 +56,9 @@ export interface AnalysisState {
 
   // 草稿数据缓存
   draftCache: Map<string, any>
+
+  // 正在分析中的记录ID集合（防止重复提交）
+  analyzingRecordIds: Set<string>
 }
 
 /**
@@ -80,12 +86,14 @@ export const useAnalysisStore = defineStore('analysis', {
   state: (): AnalysisState => ({
     dataSourceMode: 'selected',
     pendingRecords: [],
+    completedRecords: [],
     selectedRecord: null,
     analysisResults: new Map(),
     sidebarExpanded: false,
     loading: false,
     initialized: false,
-    draftCache: new Map()
+    draftCache: new Map(),
+    analyzingRecordIds: new Set()
   }),
 
   getters: {
@@ -110,6 +118,17 @@ export const useAnalysisStore = defineStore('analysis', {
     // 是否有待分析笔记
     hasPendingRecords(state): boolean {
       return state.pendingRecords.length > 0
+    },
+
+    // 检查指定记录是否正在分析中
+    isAnalyzing: (state) => (recordId: string): boolean => {
+      return state.analyzingRecordIds.has(recordId)
+    },
+
+    // 检查指定记录是否已有分析结果
+    hasAnalysisResult: (state) => (recordId: string): boolean => {
+      const result = state.analysisResults.get(recordId)
+      return result?.analyzed ?? false
     }
   },
 
@@ -121,7 +140,8 @@ export const useAnalysisStore = defineStore('analysis', {
       if (this.initialized) return
 
       try {
-        const response = await fetch('/api/analysis/pending')
+        // 只获取 status=pending 的记录
+        const response = await fetch('/api/analysis/pending?status=pending')
         const data = await response.json()
 
         if (data.success) {
@@ -130,6 +150,23 @@ export const useAnalysisStore = defineStore('analysis', {
         }
       } catch (e) {
         console.error('[AnalysisStore] Failed to initialize:', e)
+      }
+    },
+
+    /**
+     * 加载已完成分析的笔记列表
+     */
+    async loadCompletedRecords() {
+      try {
+        // 获取 status=completed 的记录
+        const response = await fetch('/api/analysis/pending?status=completed')
+        const data = await response.json()
+
+        if (data.success) {
+          this.completedRecords = data.data || []
+        }
+      } catch (e) {
+        console.error('[AnalysisStore] Failed to load completed records:', e)
       }
     },
 
@@ -245,12 +282,61 @@ export const useAnalysisStore = defineStore('analysis', {
     },
 
     /**
-     * 选择记录进行分析
+     * 选择记录进行分析（同时加载该记录的分析结果）
      */
-    selectRecord(record: ReferenceRecord | null) {
+    async selectRecord(record: ReferenceRecord | null) {
       this.selectedRecord = record
       if (record) {
         this.sidebarExpanded = true
+        // 加载该记录的分析结果（如果尚未加载）
+        if (!this.analysisResults.has(record.record_id)) {
+          await this.loadAnalysisResult(record.record_id)
+        }
+      }
+    },
+
+    /**
+     * 加载指定记录的分析结果
+     */
+    async loadAnalysisResult(recordId: string): Promise<void> {
+      try {
+        const response = await fetch(`/api/analysis/result/${recordId}`)
+        const data = await response.json()
+
+        if (data.success && data.data) {
+          this.setAnalysisResult(recordId, {
+            record_id: recordId,
+            analyzed: data.data.analyzed,
+            content: data.data.content,
+            created_at: data.data.created_at
+          })
+        }
+      } catch (e) {
+        console.error('[AnalysisStore] Failed to load analysis result:', e)
+      }
+    },
+
+    /**
+     * 加载所有分析结果
+     */
+    async loadAllAnalysisResults(): Promise<void> {
+      try {
+        const response = await fetch('/api/analysis/results')
+        const data = await response.json()
+
+        if (data.success && data.data) {
+          // data.data is an array of analysis results
+          for (const result of data.data) {
+            this.setAnalysisResult(result.record_id, {
+              record_id: result.record_id,
+              analyzed: result.analyzed,
+              content: result.content,
+              created_at: result.created_at
+            })
+          }
+        }
+      } catch (e) {
+        console.error('[AnalysisStore] Failed to load all analysis results:', e)
       }
     },
 
@@ -333,6 +419,17 @@ export const useAnalysisStore = defineStore('analysis', {
       draftData: Partial<AnalysisDraft>,
       onStep?: (step: string) => void
     ): Promise<boolean> {
+      const recordId = draftData.record_id!
+
+      // 检查是否正在分析中
+      if (this.analyzingRecordIds.has(recordId)) {
+        console.warn('[AnalysisStore] Record already analyzing:', recordId)
+        return false
+      }
+
+      // 标记为正在分析
+      this.analyzingRecordIds.add(recordId)
+
       try {
         this.loading = true
 
@@ -340,7 +437,7 @@ export const useAnalysisStore = defineStore('analysis', {
         const { analyzeStream } = await import('@/api/analysis')
 
         await analyzeStream(
-          draftData.record_id!,
+          recordId,
           draftData,
           {
             // onProgress
@@ -380,6 +477,8 @@ export const useAnalysisStore = defineStore('analysis', {
             // onFinish
             onFinish: (data) => {
               console.log('[AnalysisStore] Analysis finished:', data.record_id)
+              // 移除正在分析标记
+              this.analyzingRecordIds.delete(recordId)
               this.loading = false
               if (onStep) {
                 onStep('')
@@ -388,6 +487,8 @@ export const useAnalysisStore = defineStore('analysis', {
             // onStreamError
             onStreamError: (error) => {
               console.error('[AnalysisStore] Stream error:', error)
+              // 移除正在分析标记
+              this.analyzingRecordIds.delete(recordId)
               this.loading = false
               if (onStep) {
                 onStep('连接失败')
@@ -399,6 +500,8 @@ export const useAnalysisStore = defineStore('analysis', {
         return true
       } catch (e) {
         console.error('[AnalysisStore] Failed to submit analysis:', e)
+        // 移除正在分析标记
+        this.analyzingRecordIds.delete(recordId)
         this.loading = false
         return false
       }

@@ -21,7 +21,7 @@
               <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z"></path>
             </svg>
           </div>
-          <p>点击笔记卡片上的「对标分析」按钮<br>查看分析结果</p>
+          <p>点击笔记卡片查看分析结果</p>
         </div>
 
         <!-- 已选择笔记，但未分析 -->
@@ -63,9 +63,19 @@
             <h3 class="preview-title">{{ store.selectedRecord?.title }}</h3>
           </div>
 
-          <div class="analysis-content">
-            <p class="placeholder">分析结果将在这里显示...</p>
-            <p class="note">（后续版本实现）</p>
+          <!-- Markdown 渲染的内容 -->
+          <div class="analysis-content" v-html="renderedContent"></div>
+
+          <!-- 重新分析按钮 -->
+          <div class="reanalyze-action">
+            <button class="reanalyze-btn" @click="handleReanalyze">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 4v6h-6"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+              重新分析
+            </button>
           </div>
         </div>
       </div>
@@ -83,7 +93,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { useAnalysisStore } from '@/stores/analysis'
 import AnalyzeConfirmModal from './AnalyzeConfirmModal.vue'
 
@@ -91,6 +103,24 @@ const store = useAnalysisStore()
 
 // 确认弹窗状态
 const confirmModalVisible = ref(false)
+
+// 渲染 Markdown 内容
+const renderedContent = computed(() => {
+  if (!store.selectedRecord) return ''
+
+  const result = store.analysisResults.get(store.selectedRecord.record_id)
+  if (!result?.content) return ''
+
+  // 配置 marked 选项
+  marked.setOptions({
+    breaks: true, // 支持换行
+    gfm: true, // GitHub Flavored Markdown
+  })
+
+  // 解析 Markdown 并净化 HTML
+  const rawHtml = marked(result.content) as string
+  return DOMPurify.sanitize(rawHtml)
+})
 
 // 格式化数字
 function formatCount(count: number): string {
@@ -125,6 +155,11 @@ function handleSaveDraft(data: any) {
 function handleSubmit(data: any) {
   console.log('分析已提交:', data)
   // TODO: 可以添加 toast 提示，并轮询分析结果
+}
+
+// 重新分析
+function handleReanalyze() {
+  openConfirmModal()
 }
 </script>
 
@@ -346,6 +381,149 @@ function handleSubmit(data: any) {
   padding: 20px;
   background: #f8f7f5;
   border-radius: 12px;
+  line-height: 1.7;
+  font-size: 14px;
+  color: #333;
+  overflow-x: auto;
+}
+
+/* Markdown Content Styles */
+.analysis-content :deep(h1),
+.analysis-content :deep(h2),
+.analysis-content :deep(h3),
+.analysis-content :deep(h4),
+.analysis-content :deep(h5),
+.analysis-content :deep(h6) {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.analysis-content :deep(h1) { font-size: 20px; }
+.analysis-content :deep(h2) { font-size: 18px; }
+.analysis-content :deep(h3) { font-size: 16px; }
+.analysis-content :deep(h4) { font-size: 15px; }
+
+.analysis-content :deep(p) {
+  margin-bottom: 12px;
+  line-height: 1.7;
+}
+
+.analysis-content :deep(ul),
+.analysis-content :deep(ol) {
+  margin-bottom: 16px;
+  padding-left: 24px;
+}
+
+.analysis-content :deep(li) {
+  margin-bottom: 8px;
+}
+
+.analysis-content :deep(code) {
+  background: #e8e6e3;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  color: #e61e3a;
+}
+
+.analysis-content :deep(pre) {
+  background: #f0efed;
+  padding: 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+
+.analysis-content :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  color: #333;
+}
+
+.analysis-content :deep(blockquote) {
+  border-left: 4px solid var(--primary, #ff2442);
+  padding-left: 16px;
+  margin: 16px 0;
+  color: #666;
+  font-style: italic;
+}
+
+.analysis-content :deep(a) {
+  color: var(--primary, #ff2442);
+  text-decoration: none;
+}
+
+.analysis-content :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.analysis-content :deep(strong) {
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.analysis-content :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+
+.analysis-content :deep(th),
+.analysis-content :deep(td) {
+  padding: 12px;
+  border: 1px solid #e8e6e3;
+  text-align: left;
+}
+
+.analysis-content :deep(th) {
+  background: #f8f7f5;
+  font-weight: 600;
+}
+
+.analysis-content :deep(hr) {
+  border: none;
+  border-top: 1px solid #e8e6e3;
+  margin: 24px 0;
+}
+
+/* 重新分析操作 */
+.reanalyze-action {
+  padding-top: 16px;
+  border-top: 1px solid #e8e6e3;
+}
+
+.reanalyze-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 20px;
+  border: 1px solid #e0dedb;
+  border-radius: 10px;
+  background: white;
+  color: #666;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.reanalyze-btn:hover {
+  border-color: var(--primary, #ff2442);
+  color: var(--primary, #ff2442);
+  background: linear-gradient(135deg, rgba(255, 36, 66, 0.08) 0%, rgba(255, 107, 107, 0.08) 100%);
+}
+
+.reanalyze-btn svg {
+  transition: transform 0.3s ease;
+}
+
+.reanalyze-btn:hover svg {
+  transform: rotate(180deg);
 }
 
 .placeholder {

@@ -64,7 +64,7 @@
           <h3 class="section-title">数据统计</h3>
           <div class="stats-list">
             <div class="stat-item">
-              <span class="stat-label">总记录数</span>
+              <span class="stat-label">待分析记录数</span>
               <span class="stat-value">{{ totalRecords }}</span>
             </div>
           </div>
@@ -75,8 +75,22 @@
       <main class="content-area">
         <!-- 数据源提示 -->
         <div class="data-source-bar">
-          <div class="source-info">
-            已选笔记 ({{ analysisStore.pendingCount }})
+          <!-- 标签页切换 -->
+          <div class="tab-switcher">
+            <button
+              class="tab-btn"
+              :class="{ active: currentTab === 'pending' }"
+              @click="switchTab('pending')"
+            >
+              待分析
+            </button>
+            <button
+              class="tab-btn"
+              :class="{ active: currentTab === 'results' }"
+              @click="switchTab('results')"
+            >
+              分析结果
+            </button>
           </div>
 
           <!-- 排序选项 -->
@@ -104,8 +118,10 @@
           </div>
         </div>
 
-        <!-- 筛选标签 -->
-        <div v-if="hasActiveFilters" class="filter-tags">
+        <!-- 待分析标签页内容 -->
+        <template v-if="currentTab === 'pending'">
+          <!-- 筛选标签 -->
+          <div v-if="hasActiveFilters" class="filter-tags">
           <span class="filter-tag" v-if="filters.keyword">
             关键词: {{ filters.keyword }}
             <button @click="clearFilter('keyword')" class="tag-close">×</button>
@@ -175,6 +191,16 @@
             </button>
           </div>
         </div>
+        </template>
+
+        <!-- 分析结果标签页内容 -->
+        <AnalysisResultsTab
+          v-else
+          :filters="filters"
+          :sort-by="sortBy"
+          :sort-order="sortOrder"
+          :page-size="pageSize"
+        />
       </main>
     </div>
 
@@ -189,6 +215,7 @@ import { useReferenceStore } from '@/stores/reference'
 import { useAnalysisStore } from '@/stores/analysis'
 import AnalysisCard from '@/components/analysis/AnalysisCard.vue'
 import AnalysisSidebar from '@/components/analysis/AnalysisSidebar.vue'
+import AnalysisResultsTab from '@/components/analysis/AnalysisResultsTab.vue'
 
 /**
  * 对标分析页面
@@ -198,6 +225,9 @@ import AnalysisSidebar from '@/components/analysis/AnalysisSidebar.vue'
 
 const referenceStore = useReferenceStore()
 const analysisStore = useAnalysisStore()
+
+// 标签页状态
+const currentTab = ref<'pending' | 'results'>('pending')
 
 // 筛选条件
 const filters = ref({
@@ -223,14 +253,15 @@ const availableIndustries = computed(() => {
   return Object.keys(referenceStore.stats.industry_distribution)
 })
 
-// 总记录数（已选笔记数量）
-const totalRecords = computed(() => {
-  return analysisStore.pendingRecords.length
+// 基础数据源（已选笔记 - 只包含 status=pending 的）
+const baseRecords = computed(() => {
+  // pendingRecords 现在只包含 status=pending 的记录，不需要再过滤
+  return analysisStore.pendingRecords
 })
 
-// 基础数据源（已选笔记）
-const baseRecords = computed(() => {
-  return analysisStore.pendingRecords
+// 总记录数（待分析笔记数量，排除已分析的）
+const totalRecords = computed(() => {
+  return baseRecords.value.length
 })
 
 // 筛选后的记录
@@ -307,8 +338,14 @@ const hasActiveFilters = computed(() => {
 onMounted(async () => {
   loading.value = true
   try {
-    // 初始化分析 store（从后端加载已选笔记）
+    // 初始化分析 store（从后端加载已选笔记 - 只获取 status=pending 的）
     await analysisStore.initialize()
+
+    // 加载已完成分析的记录（status=completed）
+    await analysisStore.loadCompletedRecords()
+
+    // 加载所有分析结果（用于获取分析内容）
+    await analysisStore.loadAllAnalysisResults()
 
     // 如果 reference store 没有数据，先获取
     if (referenceStore.records.length === 0) {
@@ -326,6 +363,14 @@ onMounted(async () => {
 // 搜索
 function handleSearch() {
   currentPage.value = 1
+}
+
+// 切换标签页
+function switchTab(tab: 'pending' | 'results') {
+  currentTab.value = tab
+  currentPage.value = 1
+  // 清除选择
+  analysisStore.clearSelection()
 }
 
 // 排序字段切换
@@ -560,14 +605,22 @@ function handleDetail(recordId: string) {
 /* 数据源提示栏 */
 .data-source-bar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 16px;
   margin-bottom: 16px;
   padding: 12px 16px;
   background: linear-gradient(135deg, rgba(255, 36, 66, 0.08) 0%, rgba(255, 107, 107, 0.08) 100%);
   border-radius: 10px;
   border: 1px solid rgba(255, 36, 66, 0.15);
+  min-height: 48px;
+}
+
+.data-source-bar > .tab-switcher {
+  flex-shrink: 0;
+}
+
+.data-source-bar > .sort-bar {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .source-info {
@@ -576,12 +629,43 @@ function handleDetail(recordId: string) {
   color: var(--primary, #ff2442);
 }
 
+/* 标签页切换 */
+.tab-switcher {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  padding: 8px 20px;
+  border: 2px solid transparent;
+  background: transparent;
+  color: #666;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 8px;
+  white-space: nowrap;
+  min-width: fit-content;
+}
+
+.tab-btn:hover {
+  color: var(--primary, #ff2442);
+}
+
+.tab-btn.active {
+  background: var(--primary, #ff2442);
+  color: white;
+  border-color: var(--primary, #ff2442);
+}
+
 /* 排序栏 */
 .sort-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .sort-label {

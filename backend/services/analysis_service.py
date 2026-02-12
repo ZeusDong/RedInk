@@ -73,6 +73,7 @@ class AnalysisService:
                 record_id TEXT NOT NULL UNIQUE,
                 title TEXT,
                 data TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -116,6 +117,19 @@ class AnalysisService:
             CREATE INDEX IF NOT EXISTS idx_analysis_drafts_record_id
             ON analysis_drafts(record_id)
         ''')
+
+        # 数据库迁移：为现有的 pending_notes 表添加 status 列（如果不存在）
+        try:
+            cursor.execute("SELECT status FROM pending_notes LIMIT 1")
+            logger.debug("[ANALYSIS_SERVICE] status column already exists in pending_notes")
+        except sqlite3.Error:
+            # 列不存在，添加它
+            logger.info("[ANALYSIS_SERVICE] Adding status column to pending_notes table")
+            cursor.execute('ALTER TABLE pending_notes ADD COLUMN status TEXT DEFAULT "pending"')
+            # 为现有的记录设置默认状态
+            cursor.execute('UPDATE pending_notes SET status = "pending" WHERE status IS NULL')
+            conn.commit()
+            logger.info("[ANALYSIS_SERVICE] Database migration completed: status column added")
 
         conn.commit()
 
@@ -205,9 +219,12 @@ class AnalysisService:
             print(f"Error clearing pending notes: {e}")
             return False
 
-    def get_pending_notes(self) -> List[Dict[str, Any]]:
+    def get_pending_notes(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        获取所有待分析笔记
+        获取待分析笔记
+
+        Args:
+            status: 可选的状态过滤 ('pending', 'completed', 'failed')
 
         Returns:
             List[Dict]: 笔记列表
@@ -216,7 +233,10 @@ class AnalysisService:
         cursor = conn.cursor()
 
         try:
-            cursor.execute('SELECT data FROM pending_notes ORDER BY created_at DESC')
+            if status:
+                cursor.execute('SELECT data FROM pending_notes WHERE status = ? ORDER BY created_at DESC', (status,))
+            else:
+                cursor.execute('SELECT data FROM pending_notes ORDER BY created_at DESC')
             rows = cursor.fetchall()
             return [json.loads(row['data']) for row in rows]
         except sqlite3.Error as e:
@@ -314,12 +334,26 @@ class AnalysisService:
         cursor = conn.cursor()
 
         try:
+            # 保存分析结果
             cursor.execute('''
                 INSERT OR REPLACE INTO analysis_results (record_id, analyzed, content, updated_at)
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
             ''', (record_id, 1 if analyzed else 0, content))
+
+            # 同时更新 pending_notes 表中的状态
+            if analyzed:
+                new_status = 'completed'
+            else:
+                new_status = 'failed'
+
+            cursor.execute('''
+                UPDATE pending_notes
+                SET status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE record_id = ?
+            ''', (new_status, record_id))
+
             conn.commit()
-            logger.info(f"[ANALYSIS_SERVICE] Analysis result saved successfully: record_id={record_id}")
+            logger.info(f"[ANALYSIS_SERVICE] Analysis result saved successfully: record_id={record_id}, status={new_status}")
             return True
         except sqlite3.Error as e:
             logger.error(f"[ANALYSIS_SERVICE] Error setting analysis result (record_id={record_id}): {e}", exc_info=True)
