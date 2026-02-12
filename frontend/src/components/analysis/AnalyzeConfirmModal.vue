@@ -262,17 +262,77 @@
                 </button>
               </div>
 
-              <!-- 视觉描述 -->
+              <!-- 视觉描述 - 卡片式 -->
               <div class="form-group">
                 <label class="form-label required">视觉描述</label>
-                <textarea
-                  v-model="formData.visual_description"
-                  class="form-textarea"
-                  :class="{ error: errors.visual_description }"
-                  :placeholder="hasImages ? '请先选择图片，然后点击「生成视觉描述」' : '描述图片的视觉风格、配色、构图等...'"
-                  :readonly="generatingVisual"
-                  rows="4"
-                ></textarea>
+
+                <!-- 卡片列表 -->
+                <div v-if="parsedImageDescriptions.length > 0" class="image-desc-cards">
+                  <div
+                    v-for="item in parsedImageDescriptions"
+                    :key="item.id"
+                    class="image-desc-card"
+                    :class="{ 'card-error': errors.visual_description && !item.content.trim() }"
+                  >
+                    <!-- 卡片头部 -->
+                    <div class="card-header">
+                      <div class="card-title">
+                        <!-- 缩略图 -->
+                        <img
+                          v-if="item.imageSrc"
+                          :src="item.imageSrc"
+                          class="card-thumb"
+                          :alt="item.label"
+                        />
+                        <div v-else class="card-thumb-placeholder">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                            <polyline points="21 15 16 10 5 21"></polyline>
+                          </svg>
+                        </div>
+                        <span class="card-label">{{ item.label }}</span>
+                        <!-- 状态标识 -->
+                        <span
+                          v-if="getBadgeState(item.index) !== 'none'"
+                          class="card-badge"
+                          :class="getBadgeState(item.index)"
+                          :title="getBadgeTitle(getBadgeState(item.index))"
+                        >
+                          {{ getBadgeIcon(getBadgeState(item.index)) }}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        class="card-delete-btn"
+                        @click="removeImageDescription(item.id)"
+                        title="删除此描述"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                      </button>
+                    </div>
+
+                    <!-- 卡片内容 - 可编辑描述 -->
+                    <textarea
+                      :value="item.content"
+                      @input="updateImageDescription(item.id, $event)"
+                      class="card-textarea"
+                      placeholder="描述此图片的视觉风格、配色、构图等..."
+                      rows="3"
+                    >{{ item.content }}</textarea>
+                  </div>
+                </div>
+
+                <!-- 空状态提示 -->
+                <div v-else class="empty-cards-hint">
+                  <p v-if="hasImages">👆 请先选择图片，然后点击「生成视觉描述」</p>
+                  <p v-else>请描述图片的视觉风格、配色、构图等...</p>
+                </div>
+
+                <!-- 错误提示 -->
                 <span v-if="errors.visual_description" class="form-error">{{ errors.visual_description }}</span>
               </div>
 
@@ -384,6 +444,226 @@ const contentLoadErrors = ref<Set<number>>(new Set())
 // 本地图片检查状态
 const hasCheckedLocal = ref(false)
 
+// ========== 新增：卡片式视觉描述 ==========
+
+// 图片描述卡片类型
+interface ImageDescCard {
+  id: string          // 唯一ID
+  index: number       // 图片索引（-1=封面，0+=内容图）
+  label: string       // 显示标签（如"封面图"、"内容图1"）
+  content: string     // 描述内容
+  imageSrc?: string   // 图片URL
+}
+
+// 解析视觉描述字符串为卡片数组
+const parsedImageDescriptions = computed<ImageDescCard[]>(() => {
+  const result: ImageDescCard[] = []
+  const desc = formData.visual_description.trim()
+
+  console.log('[parsedImageDescriptions] Input visual_description:', desc)
+  console.log('[parsedImageDescriptions] Input length:', desc.length)
+  console.log('[parsedImageDescriptions] imageDescriptions metadata:', imageDescriptions.value)
+
+  if (!desc) {
+    console.log('[parsedImageDescriptions] Empty input, returning empty array')
+    return result
+  }
+
+  // Normalize line endings for consistent parsing
+  const normalizedDesc = desc.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+  console.log('[parsedImageDescriptions] Normalized desc:', normalizedDesc.slice(0, 500))
+
+  // 更宽松的匹配模式：逐步匹配，然后按行分割
+  // 1. 首先找到所有 <!-- DESC-xxx --> 标记
+  // 2. 然后提取标记后的内容（标签+内容）
+
+  const markerPattern = /<!--\s*DESC-([a-z0-9-]+)\s*-->/gi
+  const markers: Array<{match: string, id: string, index: number}> = []
+
+  let markerMatch: RegExpExecArray | null
+  while ((markerMatch = markerPattern.exec(normalizedDesc)) !== null) {
+    markers.push({
+      match: markerMatch[0],
+      id: markerMatch[1],
+      index: markerMatch.index
+    })
+  }
+
+  console.log('[parsedImageDescriptions] Found markers:', markers.length)
+
+  // 为每个标记提取内容
+  for (let i = 0; i < markers.length; i++) {
+    const { id, index: markerIndex } = markers[i]
+
+    // 内容从标记后开始
+    const contentStart = markerIndex + markers[i].match.length
+
+    // 找到下一个标记或字符串末尾
+    let contentEnd = normalizedDesc.length
+    if (i < markers.length - 1) {
+      contentEnd = markers[i + 1].index
+    }
+
+    // 提取原始内容
+    let rawContent = normalizedDesc.substring(contentStart, contentEnd).trim()
+
+    console.log(`[parsedImageDescriptions] Processing marker ${i + 1}/${markers.length}:`, {
+      id,
+      rawContentLength: rawContent.length,
+      rawContentPreview: rawContent.slice(0, 200)
+    })
+
+    // 按行分割，第一行是标签，其余是内容
+    const lines = rawContent.split('\n')
+    let label = ''
+    let content = ''
+
+    if (lines.length >= 2) {
+      label = lines[0].trim()
+      content = lines.slice(1).join('\n').trim()
+    } else if (lines.length === 1) {
+      // 只有一行，可能是标签，内容为空
+      label = lines[0].trim()
+      content = ''
+    }
+
+    // 从 ID 中提取索引（最后一部分是索引，如 "0", "1", "-1"）
+    // 注意：封面图的 ID 格式可能是 xxx-xxx--1，需要特殊处理
+    let index = 0
+    if (id.endsWith('--1')) {
+      index = -1
+    } else {
+      const lastDashIndex = id.lastIndexOf('-')
+      if (lastDashIndex !== -1) {
+        index = parseInt(id.substring(lastDashIndex + 1), 10)
+      }
+    }
+
+    console.log(`[parsedImageDescriptions] Parsed:`, {
+      id,
+      index,
+      label,
+      contentLength: content.length,
+      contentPreview: content.slice(0, 100)
+    })
+
+    // 优先使用 imageDescriptions 中的数据（更可靠）
+    // 如果 visual_description 中没有内容，从元数据中获取
+    let finalContent = content
+    let finalLabel = label
+
+    // 在 imageDescriptions 中查找匹配的描述
+    // 通过 id 或 index 匹配
+    const metaDesc = Object.values(imageDescriptions.value).find(d => d.id === id) || (imageDescriptions.value as Record<string, ImageDescription>)[String(index)]
+
+    if (metaDesc) {
+      console.log(`[parsedImageDescriptions] Found metadata for ${id}, using metadata content`)
+      // 如果元数据中有内容，优先使用
+      if (metaDesc.content) {
+        finalContent = metaDesc.content
+      }
+      // 如果解析出的标签为空，从元数据中推断
+      if (!finalLabel) {
+        const metaIndex = Object.keys(imageDescriptions.value).find(k => (imageDescriptions.value as Record<string, ImageDescription>)[k]?.id === id)
+        if (metaIndex) {
+          const idx = parseInt(metaIndex, 10)
+          finalLabel = idx === -1 ? '【封面图】' : `【内容图${idx + 1}】`
+        }
+      }
+    }
+
+    console.log(`[parsedImageDescriptions] Final:`, {
+      id,
+      index,
+      finalLabel,
+      finalContentLength: finalContent.length,
+      finalContentPreview: finalContent.slice(0, 100)
+    })
+
+    // 获取图片URL
+    let imageSrc: string | undefined
+    if (index === -1) {
+      imageSrc = props.record?.cover_image
+    } else if (props.record?.images && index >= 0 && index < props.record.images.length) {
+      imageSrc = props.record.images[index]
+    }
+
+    result.push({
+      id,
+      index,
+      label: finalLabel,
+      content: finalContent,
+      imageSrc
+    })
+  }
+
+  console.log('[parsedImageDescriptions] Total cards created:', result.length)
+  console.log('[parsedImageDescriptions] Final result array:', result.map(r => ({
+    id: r.id,
+    label: r.label,
+    contentLength: r.content.length,
+    contentPreview: r.content.slice(0, 50)
+  })))
+
+  return result
+})
+
+// 更新单张图片的描述内容
+function updateImageDescription(id: string, event: Event) {
+  const target = event.target as HTMLTextAreaElement
+  const newContent = target.value
+
+  // 找到对应的卡片
+  const card = parsedImageDescriptions.value.find(c => c.id === id)
+  if (!card) return
+
+  // 重新构建 visual_description 字符串
+  rebuildVisualDescription(id, newContent)
+}
+
+// 重新构建视觉描述字符串
+function rebuildVisualDescription(changedId?: string, newContent?: string, excludeId?: string) {
+  let cards = parsedImageDescriptions.value.map(c => {
+    // 如果是更新的卡片，使用新内容
+    if (changedId && c.id === changedId) {
+      return { ...c, content: newContent || '' }
+    }
+    return c
+  })
+
+  // 过滤掉被删除的卡片
+  if (excludeId) {
+    cards = cards.filter(c => c.id !== excludeId)
+  }
+
+  // 重建字符串
+  if (cards.length === 0) {
+    formData.visual_description = ''
+    return
+  }
+
+  const newDesc = cards.map(c => {
+    return `<!-- DESC-${c.id} -->\n${c.label}\n${c.content}`
+  }).join('\n\n---\n\n')
+
+  formData.visual_description = newDesc
+}
+
+// 删除单张图片的描述
+function removeImageDescription(id: string) {
+  if (!confirm('确定要删除此描述吗？')) return
+
+  // 从 imageDescriptions 元数据中移除
+  const card = parsedImageDescriptions.value.find(c => c.id === id)
+  if (card) {
+    delete imageDescriptions.value[card.index]
+  }
+
+  // 重建字符串（排除被删除的卡片）
+  rebuildVisualDescription(undefined, undefined, id)
+}
+
 // ========== 新增：图片描述元数据 ==========
 
 // Image description metadata per image index
@@ -453,6 +733,14 @@ watch(() => props.visible, (visible) => {
   }
 })
 
+// Debug: 监听 visual_description 变化
+watch(() => formData.visual_description, (newVal, oldVal) => {
+  console.log('[AnalyzeConfirmModal] visual_description changed:')
+  console.log('  Old length:', oldVal?.length || 0)
+  console.log('  New length:', newVal?.length || 0)
+  console.log('  New value preview:', newVal?.slice(0, 200) + (newVal?.length > 200 ? '...' : ''))
+}, { immediate: true })
+
 async function loadDraftOrRecord() {
   if (!props.record) return
 
@@ -462,6 +750,11 @@ async function loadDraftOrRecord() {
     const result = await response.json()
 
     if (result.success && result.data) {
+      // Debug: 打印草稿数据
+      console.log('[AnalyzeConfirmModal] Loading draft data:', result.data)
+      console.log('[AnalyzeConfirmModal] Draft visual_description:', result.data.visual_description)
+      console.log('[AnalyzeConfirmModal] Draft image_descriptions:', result.data.image_descriptions)
+
       // 加载草稿数据
       Object.assign(formData, {
         record_id: result.data.record_id || props.record.record_id,
@@ -483,6 +776,39 @@ async function loadDraftOrRecord() {
       } else {
         imageDescriptions.value = {}
       }
+
+      // Fix: 如果 visual_description 为空但 image_descriptions 有内容，则重建 visual_description
+      if (!formData.visual_description.trim() && Object.keys(imageDescriptions.value).length > 0) {
+        console.log('[AnalyzeConfirmModal] Reconstructing visual_description from image_descriptions metadata')
+        const reconstructedParts: string[] = []
+
+        // 按 index 顺序重建 (-1 优先，然后 0, 1, 2...)
+        const sortedIndices = Object.keys(imageDescriptions.value)
+          .map(k => parseInt(k, 10))
+          .sort((a, b) => {
+            // -1 (封面) 排在最前面
+            if (a === -1) return -1
+            if (b === -1) return 1
+            return a - b
+          })
+
+        for (const idx of sortedIndices) {
+          const desc = imageDescriptions.value[idx]
+          if (!desc) continue
+
+          // 生成标签
+          const label = idx === -1 ? '【封面图】' : `【内容图${idx + 1}】`
+
+          // 格式: <!-- DESC-${uniqueId} -->\n${label}\n${content}
+          reconstructedParts.push(`<!-- DESC-${desc.id} -->\n${label}\n${desc.content}`)
+        }
+
+        formData.visual_description = reconstructedParts.join('\n\n---\n\n')
+        console.log('[AnalyzeConfirmModal] Reconstructed visual_description:', formData.visual_description.slice(0, 200) + '...')
+      }
+
+      console.log('[AnalyzeConfirmModal] Loaded formData.visual_description:', formData.visual_description)
+      console.log('[AnalyzeConfirmModal] Loaded imageDescriptions:', imageDescriptions.value)
 
       return
     }
@@ -550,6 +876,13 @@ function validate(): boolean {
   if (!formData.visual_description.trim()) {
     errors.visual_description = '请输入视觉描述或使用 AI 生成'
     isValid = false
+  } else if (parsedImageDescriptions.value.length > 0) {
+    // 检查是否所有卡片都有内容
+    const emptyCards = parsedImageDescriptions.value.filter(c => !c.content.trim())
+    if (emptyCards.length === parsedImageDescriptions.value.length) {
+      errors.visual_description = '请至少填写一张图片的视觉描述'
+      isValid = false
+    }
   }
 
   return isValid
@@ -1468,5 +1801,151 @@ async function checkLocalImages() {
 
 .image-badge.missing {
   background: #faad14;
+}
+
+/* ========== 图片描述卡片样式 ========== */
+.image-desc-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.image-desc-card {
+  background: white;
+  border: 1px solid #e8e6e3;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.image-desc-card:hover {
+  border-color: #ddd;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.image-desc-card.card-error {
+  border-color: #ff2442;
+}
+
+.image-desc-card.card-error .card-textarea {
+  border-color: #ff2442;
+}
+
+/* 卡片头部 */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: #f8f7f5;
+  border-bottom: 1px solid #e8e6e3;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #e8e6e3;
+}
+
+.card-thumb-placeholder {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e8e6e3;
+  border-radius: 6px;
+  color: #999;
+}
+
+.card-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.card-badge {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: white;
+}
+
+.card-badge.generated {
+  background: #52c41a;
+}
+
+.card-badge.missing {
+  background: #faad14;
+}
+
+.card-delete-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: #999;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.card-delete-btn:hover {
+  background: #ffeee8;
+  color: #ff2442;
+}
+
+/* 卡片内容 */
+.card-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #333;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 80px;
+  background: white;
+}
+
+.card-textarea:focus {
+  outline: none;
+  background: #fafafa;
+}
+
+.card-textarea::placeholder {
+  color: #bbb;
+}
+
+/* 空状态提示 */
+.empty-cards-hint {
+  padding: 24px;
+  background: #f8f7f5;
+  border: 1px dashed #ddd;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.empty-cards-hint p {
+  margin: 0;
+  font-size: 13px;
+  color: #999;
 }
 </style>
