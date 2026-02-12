@@ -310,6 +310,8 @@
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted, computed } from 'vue'
 import type { ReferenceRecord } from '@/api'
+import { useImageDescriptionBadge } from '@/composables/useImageDescriptionBadge'
+import type { ImageDescription } from '@/types/analysis'
 
 interface Props {
   visible: boolean
@@ -362,6 +364,21 @@ const contentLoadErrors = ref<Set<number>>(new Set())
 
 // 本地图片检查状态
 const hasCheckedLocal = ref(false)
+
+// ========== 新增：图片描述元数据 ==========
+
+// Image description metadata per image index
+const imageDescriptions = ref<Record<number, ImageDescription>>({})
+
+// Use the badge composable
+const {
+  getBadgeState,
+  getBadgeIcon,
+  getBadgeTitle
+} = useImageDescriptionBadge({
+  imageDescriptions,
+  visualDescription: computed(() => formData.visual_description || '')
+})
 
 // ========== 新增：计算属性 ==========
 
@@ -437,6 +454,14 @@ async function loadDraftOrRecord() {
         visual_description: result.data.visual_description || '',
         top_comments: result.data.top_comments || []
       })
+
+      // Load image descriptions from draft
+      if (result.data.image_descriptions) {
+        imageDescriptions.value = result.data.image_descriptions
+      } else {
+        imageDescriptions.value = {}
+      }
+
       return
     }
   } catch (e) {
@@ -445,6 +470,8 @@ async function loadDraftOrRecord() {
 
   // 从 record 加载数据
   formData.record_id = props.record.record_id
+  // Clear image descriptions when loading from record (not draft)
+  imageDescriptions.value = {}
   formData.industry = props.record.industry || ''
   formData.follower_count = props.record.blogger?.follower_count || 0
   formData.published_at = props.record.created_at ? props.record.created_at.split('T')[0] : ''
@@ -511,10 +538,18 @@ async function handleSaveDraft() {
 
   saving.value = true
   try {
+    // Add image description metadata to draft data
+    const draftData = {
+      ...formData,
+      // Add image description metadata
+      image_descriptions: imageDescriptions.value,
+      generated_image_indices: Object.keys(imageDescriptions.value).map(Number)
+    }
+
     const response = await fetch('/api/analysis/draft', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
+      body: JSON.stringify(draftData)
     })
     const result = await response.json()
 
