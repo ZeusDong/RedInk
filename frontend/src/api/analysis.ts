@@ -166,6 +166,85 @@ export async function submitAnalysis(draftData: Partial<AnalysisDraft>): Promise
 }
 
 /**
+ * AI analysis stream (SSE)
+ *
+ * @param recordId - The record ID to analyze
+ * @param draftData - The draft data for analysis
+ * @param callbacks - Object containing event callbacks
+ */
+export async function analyzeStream(
+  recordId: string,
+  draftData: Partial<AnalysisDraft>,
+  callbacks: {
+    onProgress: (data: { status: string; message: string; step?: string }) => void
+    onComplete: (data: { record_id: string; content: string }) => void
+    onError: (data: { record_id: string; error: string }) => void
+    onFinish: (data: { record_id: string }) => void
+    onStreamError: (error: Error) => void
+  }
+): Promise<void> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/analyze-stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ record_id: recordId, draft_data: draftData })
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) {
+      throw new Error('Response body is not readable')
+    }
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (!line.trim()) continue
+        const [eventLine, dataLine] = line.split('\n')
+        if (!eventLine || !dataLine) continue
+
+        const eventType = eventLine.replace('event: ', '').trim()
+        const eventData = dataLine.replace('data: ', '').trim()
+
+        try {
+          const data = JSON.parse(eventData)
+          switch (eventType) {
+            case 'progress':
+              callbacks.onProgress(data)
+              break
+            case 'complete':
+              callbacks.onComplete(data)
+              break
+            case 'error':
+              callbacks.onError(data)
+              break
+            case 'finish':
+              callbacks.onFinish(data)
+              break
+          }
+        } catch (parseError) {
+          console.error('[SSE] Failed to parse event:', parseError, eventData)
+        }
+      }
+    }
+  } catch (error) {
+    callbacks.onStreamError(error as Error)
+  }
+}
+
+/**
  * Generate visual description using AI
  *
  * @param request - The visual description request

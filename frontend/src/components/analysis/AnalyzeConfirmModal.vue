@@ -513,7 +513,8 @@
               <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
                 <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
               </svg>
-              {{ submitting ? '分析中...' : '开始 AI 分析' }}
+              <span v-if="progressMessage" class="progress-message">{{ progressMessage }}</span>
+              <span v-else class="button-text">{{ submitting ? '分析中...' : '开始 AI 分析' }}</span>
             </button>
           </footer>
         </div>
@@ -527,6 +528,7 @@ import { ref, reactive, watch, onMounted, computed } from 'vue'
 import type { ReferenceRecord } from '@/api'
 import { useImageDescriptionBadge } from '@/composables/useImageDescriptionBadge'
 import type { ImageDescription, Comment, SubComment } from '@/types/analysis'
+import { useAnalysisStore } from '@/stores/analysis'
 
 interface Props {
   visible: boolean
@@ -541,6 +543,9 @@ interface Emits {
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
+
+// 获取分析 store
+const analysisStore = useAnalysisStore()
 
 // 表单数据
 const formData = reactive({
@@ -564,6 +569,9 @@ const errors = reactive<Record<string, string>>({})
 const saving = ref(false)
 const submitting = ref(false)
 const generatingVisual = ref(false)
+// 进度步骤：用于显示 AI 分析的当前步骤
+const progressStep = ref<string>('')
+const progressMessage = ref<string>('')
 
 // 追踪是否有未保存的修改
 const hasUnsavedChanges = ref(false)
@@ -1098,6 +1106,7 @@ async function loadDraftOrRecord() {
         // Store original data for field-level comparison
         // For drafts, treat the draft as the original
         originalRecordData.value = {
+          record_id: formData.record_id,
           title: formData.title,
           content: formData.content,
           industry: formData.industry,
@@ -1309,29 +1318,40 @@ async function handleSaveDraft() {
 async function handleSubmit() {
   if (!validate()) return
 
-  submitting.value = true
   try {
-    const response = await fetch('/api/analysis/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
-    })
-    const result = await response.json()
+    // 使用 store 的 submitAnalysis 方法（内部使用 SSE 流式处理）
+    // 重置进度状态
+    progressStep.value = ''
+    progressMessage.value = ''
 
-    if (result.success) {
-      emit('submit', result.data)
+    const success = await analysisStore.submitAnalysis(formData, (step: string) => {
+      progressStep.value = step
+      // 根据步骤更新提示信息
+      const stepMessages: any = { preparing: '正在准备 AI 分析...', saving: '正在保存分析结果...', done: '分析完成！', error: '分析失败', failed: '连接失败' }
+      progressMessage.value = stepMessages[step] || step
+    })
+
+    if (success) {
+      emit('submit', formData)
       // Reset unsaved flag after successful submit
       hasUnsavedChanges.value = false
-      // Keep modal open and show success message
-      alert('✅ AI 分析已成功提交！\n\n您可以前往「分析结果」页面查看分析进度和结果。')
+      // 显示完成提示
+      setTimeout(() => {
+        progressStep.value = ''
+        progressMessage.value = ''
+      }, 3000)
     } else {
-      alert(result.error || '提交失败，请重试')
+      alert('提交失败，请检查数据完整性')
+      // 重置进度状态
+      progressStep.value = ''
+      progressMessage.value = ''
     }
   } catch (e) {
     console.error('[AnalyzeConfirmModal] Failed to submit:', e)
     alert('提交失败，请检查网络连接')
-  } finally {
-    submitting.value = false
+    // 重置进度状态
+    progressStep.value = ''
+    progressMessage.value = ''
   }
 }
 
@@ -1825,6 +1845,12 @@ async function checkLocalImages() {
 
 .ai-generate-btn svg.spin {
   animation: spin 1s linear infinite;
+}
+
+.progress-message {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #ffcc00;
 }
 
 @keyframes spin {

@@ -4,8 +4,9 @@
 提供待分析笔记列表的 CRUD 操作 API
 """
 
+import json
 import logging
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 
 logger = logging.getLogger(__name__)
 
@@ -359,5 +360,50 @@ def create_analysis_blueprint():
         except Exception as e:
             logger.error(f"[ANALYSIS_ROUTES] Error in generate_visual_description: {e}", exc_info=True)
             return jsonify({'success': False, 'error': str(e)}), 500
+
+    # ==================== AI Analysis SSE Streaming ====================
+
+    @analysis_bp.route('/analyze-stream', methods=['POST'])
+    def analyze_stream():
+        """
+        AI 分析（SSE 流式输出）
+
+        POST /api/analysis/analyze-stream
+        Body: {
+            "record_id": str,
+            "draft_data": {...}
+        }
+        """
+        logger.info("[ANALYSIS_ROUTES] POST /api/analysis/analyze-stream - Starting AI analysis")
+
+        # Extract request data HERE (outside generator) while request context is available
+        data = request.get_json()
+        record_id = data.get('record_id')
+        draft_data = data.get('draft_data', {})
+
+        def generate():
+            """SSE event generator"""
+            try:
+                # Use data extracted from outer scope (closure)
+                if not record_id:
+                    yield f"event: error\ndata: {json.dumps({'error': '缺少 record_id'}, ensure_ascii=False)}\n\n"
+                    return
+
+                service = get_analysis_service()
+
+                # Stream analysis events
+                for event in service.perform_ai_analysis(record_id, draft_data):
+                    event_type = event["event"]
+                    event_data = event["data"]
+                    yield f"event: {event_type}\ndata: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+
+            except Exception as e:
+                logger.error(f"[ANALYSIS_ROUTES] Error in analyze_stream: {e}", exc_info=True)
+                yield f"event: error\ndata: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+
+        return Response(generate(), mimetype='text/event-stream', headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        })
 
     return analysis_bp

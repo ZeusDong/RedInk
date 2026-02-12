@@ -10,7 +10,7 @@ import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Generator
 
 logger = logging.getLogger(__name__)
 
@@ -702,6 +702,147 @@ class AnalysisService:
 
         logger.debug(f"[ANALYSIS_SERVICE] Generated {len(descriptions)} individual descriptions for indices: {list(descriptions.keys())}")
         return {'descriptions': descriptions}
+
+    # ==================== AI Content Analysis ====================
+
+    def perform_ai_analysis(
+        self,
+        record_id: str,
+        draft_data: Dict[str, Any]
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        执行 AI 内容分析（流式输出）
+
+        Args:
+            record_id: 笔记 ID
+            draft_data: 草稿数据，包含分析所需的所有字段
+
+        Yields:
+            Dict with event type and data:
+            - {"event": "progress", "data": {...}}
+            - {"event": "complete", "data": {...}}
+            - {"event": "error", "data": {...}}
+            - {"event": "finish", "data": {...}}
+        """
+        from backend.utils.text_client import get_text_chat_client
+        from backend.prompts.analysis_prompts import format_full_analysis_prompt
+        from backend.config import Config
+
+        try:
+            # 1. Get text client configuration
+            text_config = Config.get_text_provider_config()
+            text_client = get_text_chat_client(text_config)
+
+            print(f"[ANALYSIS] 开始 AI 分析: record_id={record_id}")
+            logger.info(f"[ANALYSIS_SERVICE] Starting AI analysis for record_id={record_id}")
+
+            # 2. Format the prompt with actual data
+            prompt = format_full_analysis_prompt(
+                industry=draft_data.get('industry', ''),
+                follower_count=draft_data.get('follower_count', 0),
+                published_at=draft_data.get('published_at', ''),
+                likes=draft_data.get('likes_count', 0),
+                saves=draft_data.get('saves_count', 0),
+                comments=draft_data.get('comments_count', 0),
+                title=draft_data.get('title', ''),
+                content=draft_data.get('content', ''),
+                visual_description=draft_data.get('visual_description', ''),
+                top_comments=self._format_top_comments(draft_data.get('top_comments', []))
+            )
+
+            print(f"[ANALYSIS] Prompt 已生成，长度: {len(prompt)} 字符")
+            logger.debug(f"[ANALYSIS_SERVICE] Prompt generated, length: {len(prompt)} chars")
+
+            # 3. Yield start event
+            yield {
+                "event": "progress",
+                "data": {"step": "preparing", "status": "analyzing", "message": "准备发送 AI 请求..."}
+            }
+
+            # 4. Call AI for analysis
+            print(f"[ANALYSIS] 正在调用 AI API...")
+            logger.info(f"[ANALYSIS_SERVICE] Calling AI text generation API")
+
+            analysis_content = text_client.generate_text(
+                prompt=prompt,
+                temperature=0.7,  # Lower temp for more structured analysis
+                max_output_tokens=8000
+            )
+
+            print(f"[ANALYSIS] AI 分析完成，返回内容长度: {len(analysis_content)} 字符")
+            logger.info(f"[ANALYSIS_SERVICE] AI analysis completed, content length: {len(analysis_content)} chars")
+
+            # 5. Save result to database
+            print(f"[ANALYSIS] 正在保存到数据库...")
+            logger.info(f"[ANALYSIS_SERVICE] Saving analysis result to database")
+
+            self.set_analysis_result(record_id, analyzed=True, content=analysis_content)
+
+            print(f"[ANALYSIS] 已保存到数据库: record_id={record_id}")
+            logger.info(f"[ANALYSIS_SERVICE] Analysis result saved for record_id={record_id}")
+
+            # 6. Yield saving progress event
+            yield {
+                "event": "progress",
+                "data": {"step": "saving", "status": "analyzing", "message": "正在保存分析结果..."}
+            }
+
+            # 7. Yield completion event
+            yield {
+                "event": "complete",
+                "data": {"record_id": record_id, "content": analysis_content}
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"[ANALYSIS_SERVICE] AI analysis failed for record_id={record_id}: {error_msg}")
+
+            # Save error to database
+            try:
+                self.set_analysis_result(record_id, analyzed=False, content=f"Error: {error_msg}")
+            except Exception as db_error:
+                logger.warning(f"[ANALYSIS_SERVICE] Failed to save error to DB: {db_error}")
+
+            # Yield error event
+            yield {
+                "event": "error",
+                "data": {"record_id": record_id, "error": error_msg}
+            }
+
+        finally:
+            # Yield finish event
+            yield {
+                "event": "finish",
+                "data": {"record_id": record_id}
+            }
+
+    def _format_top_comments(self, comments: list) -> str:
+        """
+        Helper: Format top comments for prompt
+
+        Args:
+            comments: List of comment objects or strings
+
+        Returns:
+            Formatted comments string
+        """
+        if not comments:
+            return "无"
+        formatted = []
+        for i, comment in enumerate(comments, 1):
+            # Handle both dict format (with sub_comments) and string format
+            if isinstance(comment, dict):
+                content = comment.get('content', '')
+                likes = comment.get('likes')
+            else:
+                content = str(comment)
+                likes = None
+
+            line = f"{i}. {content}"
+            if likes:
+                line += f" ({likes} 赞)"
+            formatted.append(line)
+        return "\n".join(formatted)
 
 
 # 全局单例

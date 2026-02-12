@@ -9,6 +9,7 @@
  */
 import { defineStore } from 'pinia'
 import type { ReferenceRecord } from '../api'
+import type { Comment } from '@/types/analysis'
 
 /**
  * 分析结果类型（占位，后续实现）
@@ -70,7 +71,7 @@ export interface AnalysisDraft {
   title: string
   content: string
   visual_description: string
-  top_comments: string[]
+  top_comments: Comment[]
   created_at?: string
   updated_at?: string
 }
@@ -326,27 +327,79 @@ export const useAnalysisStore = defineStore('analysis', {
     },
 
     /**
-     * 提交分析
+     * 提交分析（使用 SSE 流式）
      */
-    async submitAnalysis(draftData: Partial<AnalysisDraft>): Promise<boolean> {
+    async submitAnalysis(
+      draftData: Partial<AnalysisDraft>,
+      onStep?: (step: string) => void
+    ): Promise<boolean> {
       try {
-        const response = await fetch('/api/analysis/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(draftData)
-        })
-        const data = await response.json()
+        this.loading = true
 
-        if (data.success) {
-          this.draftCache.set(draftData.record_id!, data.data)
-          // 标记为分析中
-          this.loading = true
-          // TODO: 开始轮询分析结果
-          return true
-        }
-        return false
+        // Import SSE function
+        const { analyzeStream } = await import('@/api/analysis')
+
+        await analyzeStream(
+          draftData.record_id!,
+          draftData,
+          {
+            // onProgress
+            onProgress: (data) => {
+              console.log('[AnalysisStore] Analysis progress:', data.message)
+              // 通知调用者进度步骤
+              if (onStep && data.step) {
+                onStep(data.step)
+              }
+            },
+            // onComplete
+            onComplete: (data) => {
+              console.log('[AnalysisStore] Analysis complete:', data.record_id)
+              this.setAnalysisResult(data.record_id, {
+                record_id: data.record_id,
+                analyzed: true,
+                content: data.content,
+                created_at: new Date().toISOString()
+              })
+              if (onStep) {
+                onStep('保存完成')
+              }
+            },
+            // onError
+            onError: (data) => {
+              console.error('[AnalysisStore] Analysis error:', data.error)
+              this.setAnalysisResult(data.record_id, {
+                record_id: data.record_id,
+                analyzed: false,
+                content: `Error: ${data.error}`,
+                created_at: new Date().toISOString()
+              })
+              if (onStep) {
+                onStep('分析失败')
+              }
+            },
+            // onFinish
+            onFinish: (data) => {
+              console.log('[AnalysisStore] Analysis finished:', data.record_id)
+              this.loading = false
+              if (onStep) {
+                onStep('')
+              }
+            },
+            // onStreamError
+            onStreamError: (error) => {
+              console.error('[AnalysisStore] Stream error:', error)
+              this.loading = false
+              if (onStep) {
+                onStep('连接失败')
+              }
+            }
+          }
+        )
+
+        return true
       } catch (e) {
         console.error('[AnalysisStore] Failed to submit analysis:', e)
+        this.loading = false
         return false
       }
     },
