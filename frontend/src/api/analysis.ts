@@ -28,6 +28,12 @@ export interface AnalysisDraft {
   content: string
   visual_description: string
   top_comments: string[]
+  // NEW: Image description tracking
+  image_descriptions?: Record<number, {
+    id: string
+    content: string
+  }>
+  generated_image_indices?: number[]
   created_at?: string
   updated_at?: string
 }
@@ -45,6 +51,15 @@ export interface VisualDescriptionRequest {
  */
 export interface VisualDescriptionResponse {
   description: string
+}
+
+/**
+ * Image proxy upload response
+ */
+export interface ImageProxyUploadResponse {
+  success: boolean
+  url?: string
+  error?: string
 }
 
 /**

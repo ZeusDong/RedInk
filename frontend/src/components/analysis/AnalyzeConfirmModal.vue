@@ -693,6 +693,22 @@ function removeComment(index: number) {
   formData.top_comments.splice(index, 1)
 }
 
+// ========== 新增：图片描述清除方法 ==========
+
+/**
+ * Clear all image description metadata (e.g., when user clears form)
+ */
+function clearImageDescriptions() {
+  imageDescriptions.value = {}
+}
+
+/**
+ * Clear description for specific image index
+ */
+function clearImageDescription(idx: number) {
+  delete imageDescriptions.value[idx]
+}
+
 function handleClose() {
   // 检查是否有未保存的更改
   const hasChanges = formData.visual_description || formData.top_comments.some(c => c.trim())
