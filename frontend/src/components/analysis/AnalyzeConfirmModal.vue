@@ -623,14 +623,37 @@ async function handleGenerateVisualDesc() {
 
     if (result.success && result.data?.description) {
       const newDescription = result.data.description
+      const descId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+
+      // Mark images as generated
+      const indicesToUpdate: number[] = []
+      if (selectedImageIndices.value.includes(-1)) {
+        indicesToUpdate.push(-1) // Cover image index
+      }
+      selectedImageIndices.value.forEach(idx => {
+        if (idx >= 0) {  // Only content images (0+)
+          indicesToUpdate.push(idx)
+        }
+      })
+
+      // Save description for each selected image
+      indicesToUpdate.forEach(idx => {
+        imageDescriptions.value[idx] = {
+          id: descId,
+          content: newDescription
+        }
+      })
+
+      // Add to form with ID marker
+      const markedDesc = `<!-- DESC-${descId} -->\n${newDescription}`
 
       // 根据模式决定是追加还是覆盖
       if (visualDescMode.value === 'append' && formData.visual_description) {
         // 追加模式：在现有描述后添加新描述，用分隔符隔开
-        formData.visual_description = formData.visual_description + '\n\n---\n\n' + newDescription
+        formData.visual_description = formData.visual_description + '\n\n---\n\n' + markedDesc
       } else {
         // 覆盖模式或首次生成
-        formData.visual_description = newDescription
+        formData.visual_description = markedDesc
       }
     } else {
       alert(result.error || 'AI 生成失败，请手动输入')
