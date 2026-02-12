@@ -40,8 +40,9 @@ def retry_on_429(max_retries=3, base_delay=2):
 class TextChatClient:
     """Text API 客户端封装类"""
 
-    def __init__(self, api_key: str = None, base_url: str = None, endpoint_type: str = None):
+    def __init__(self, api_key: str = None, base_url: str = None, endpoint_type: str = None, model: str = None):
         self.api_key = api_key
+        self.model = model  # 保存模型配置
         if not self.api_key:
             raise ValueError(
                 "Text API Key 未配置。\n"
@@ -103,7 +104,7 @@ class TextChatClient:
     def generate_text(
         self,
         prompt: str,
-        model: str = "gemini-3-pro-preview",
+        model: str = None,
         temperature: float = 1.0,
         max_output_tokens: int = 8000,
         images: List[Union[bytes, str]] = None,
@@ -126,6 +127,9 @@ class TextChatClient:
         """
         messages = []
 
+        # 使用配置的模型，如果没有则使用调用时传入的模型
+        actual_model = model or self.model or "gemini-3-pro-preview"
+
         # 添加系统提示词
         if system_prompt:
             messages.append({
@@ -141,7 +145,7 @@ class TextChatClient:
         })
 
         payload = {
-            "model": model,
+            "model": actual_model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_output_tokens,
@@ -194,7 +198,7 @@ class TextChatClient:
                 raise Exception(
                     "❌ 模型不存在或 API 端点错误\n\n"
                     "【可能原因】\n"
-                    f"1. 模型 '{model}' 不存在或已下线\n"
+                    f"1. 模型 '{actual_model}' 不存在或已下线\n"
                     "2. Base URL 配置错误\n\n"
                     "【解决方案】\n"
                     "1. 检查模型名称是否正确\n"
@@ -225,7 +229,7 @@ class TextChatClient:
                     f"❌ API 请求失败 (状态码: {status_code})\n\n"
                     f"【原始错误】\n{error_detail}\n\n"
                     f"【请求地址】{self.chat_endpoint}\n"
-                    f"【模型】{model}\n\n"
+                    f"【模型】{actual_model}\n\n"
                     "【通用解决方案】\n"
                     "1. 检查 API Key 是否正确\n"
                     "2. 检查 Base URL 配置\n"
@@ -259,6 +263,7 @@ def get_text_chat_client(provider_config: dict):
             - api_key: API密钥
             - base_url: API基础URL（可选）
             - endpoint_type: 自定义端点路径（可选）
+            - model: 模型名称（可选）
 
     Returns:
         GenAIClient 或 TextChatClient
@@ -267,9 +272,10 @@ def get_text_chat_client(provider_config: dict):
     api_key = provider_config.get('api_key')
     base_url = provider_config.get('base_url')
     endpoint_type = provider_config.get('endpoint_type')
+    model = provider_config.get('model')  # 获取模型配置
 
     if provider_type == 'google_gemini':
         from .genai_client import GenAIClient
         return GenAIClient(api_key=api_key, base_url=base_url)
     else:
-        return TextChatClient(api_key=api_key, base_url=base_url, endpoint_type=endpoint_type)
+        return TextChatClient(api_key=api_key, base_url=base_url, endpoint_type=endpoint_type, model=model)

@@ -60,8 +60,9 @@ export function useImageDescriptionBadge(
     if (!desc) return 'none'
 
     // Get this image's unique ID marker format: <!-- DESC-${uniqueId} -->
-    // Each image has its own unique ID with -{idx} suffix
-    const idMarker = `<!-- DESC-${desc.id}-${idx} -->`
+    // Note: desc.id already includes the index suffix (e.g., "xxx-1" for cover, "xxx-0" for image 1)
+    // So we only need to check for DESC-${desc.id}, no need to add -${idx} again
+    const idMarker = `<!-- DESC-${desc.id} -->`
 
     // Check if this specific image's ID marker exists in form
     const isStillInForm = visualDescValue.value.includes(idMarker)

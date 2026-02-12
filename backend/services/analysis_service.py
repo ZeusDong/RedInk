@@ -686,30 +686,22 @@ class AnalysisService:
                 except Exception as e:
                     logger.error(f"[ANALYSIS_SERVICE] Image analysis future failed: {e}")
 
-        # 合并结果
+        # Return per-image descriptions (Option A: unique description per image)
         if not results:
-            return {'description': '', 'error': '所有图片分析均失败'}
+            return {'descriptions': {}, 'error': '所有图片分析均失败'}
 
-        description_parts = []
-        cover_results = [r for r in results if r[0] == '封面图']
-        content_results = [r for r in results if r[0] == '内容图']
+        # Map image indices to their descriptions
+        descriptions: dict[int, str] = {}
+        result_idx = 0
 
-        if cover_results:
-            description_parts.append("【封面图分析】")
-            for _, desc in cover_results:
-                description_parts.append(desc)
+        for img_idx in image_indices:
+            if result_idx < len(results):
+                image_type, desc = results[result_idx]
+                descriptions[img_idx] = desc
+                result_idx += 1
 
-        if content_results:
-            description_parts.append("\n【内容图整体风格】")
-            if len(content_results) == 1:
-                description_parts.append(content_results[0][1])
-            else:
-                description_parts.append("基于选中的 {} 张内容图，整体视觉风格为：\n".format(len(content_results)))
-                for _, desc in content_results:
-                    description_parts.append(f"- {desc}")
-
-        final_description = "\n".join(description_parts)
-        return {'description': final_description}
+        logger.debug(f"[ANALYSIS_SERVICE] Generated {len(descriptions)} individual descriptions for indices: {list(descriptions.keys())}")
+        return {'descriptions': descriptions}
 
 
 # 全局单例

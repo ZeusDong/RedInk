@@ -390,13 +390,16 @@ const hasCheckedLocal = ref(false)
 const imageDescriptions = ref<Record<number, ImageDescription>>({})
 
 // Use the badge composable
+// Need to pass a computed getter to maintain reactivity since formData.visual_description is a plain string
+const visualDescGetter = computed(() => formData.visual_description)
+
 const {
   getBadgeState,
   getBadgeIcon,
   getBadgeTitle
 } = useImageDescriptionBadge({
   imageDescriptions,
-  visualDescription: formData.visual_description  // Pass string directly, composable will wrap in ref
+  visualDescription: visualDescGetter  // Pass computed ref that tracks changes to formData.visual_description
 })
 
 // ========== 新增：计算属性 ==========
@@ -621,64 +624,69 @@ async function handleGenerateVisualDesc() {
     return
   }
 
-  // 覆盖模式下，如果已有描述需要确认
-  if (visualDescMode.value === 'replace' && formData.visual_description) {
-    if (!confirm('确定要覆盖现有的视觉描述吗？')) {
-      return
-    }
-  }
-
   generatingVisual.value = true
   try {
+    // 找出已生成的图片索引（从 imageDescriptions 中获取）
+    const alreadyGeneratedIndices = new Set(Object.keys(imageDescriptions.value).map(k => Number(k)))
+
+    // 只为未生成的图片请求后端
+    const newIndicesToGenerate = selectedImageIndices.value.filter(idx => !alreadyGeneratedIndices.has(idx))
+
+    if (newIndicesToGenerate.length === 0) {
+      alert('所选图片均已生成描述，无需重复生成')
+      generatingVisual.value = false
+      return
+    }
+
+    console.log(`[AnalyzeConfirmModal] Already generated: ${Array.from(alreadyGeneratedIndices)}, New to generate: ${newIndicesToGenerate}`)
+
     const response = await fetch('/api/analysis/visual-desc', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         record_id: props.record.record_id,
-        image_indices: selectedImageIndices.value
+        image_indices: newIndicesToGenerate  // 只发送新图片
       })
     })
     const result = await response.json()
 
-    if (result.success && result.data?.description) {
-      const newDescription = result.data.description
+    if (result.success && result.data?.descriptions) {
+      const descriptionsMap = result.data.descriptions  // {index: description}
 
-      // Mark images as generated - assign unique ID to each image
-      const indicesToUpdate: number[] = []
-      if (selectedImageIndices.value.includes(-1)) {
-        indicesToUpdate.push(-1) // Cover image index
-      }
-      selectedImageIndices.value.forEach(idx => {
-        if (idx >= 0) {  // Only content images (0+)
-          indicesToUpdate.push(idx)
+      // 为新生成的图片创建标记
+      const markedDescriptionsList: string[] = []
+
+      newIndicesToGenerate.forEach(idx => {
+        const descContent = descriptionsMap[idx]
+        if (!descContent) {
+          console.warn(`[AnalyzeConfirmModal] No description for image index ${idx}`)
+          return
         }
-      })
 
-      // Save description with unique ID for EACH image
-      indicesToUpdate.forEach(idx => {
         // Generate unique ID per image: timestamp-random-index
         const uniqueDescId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${idx}`
 
+        // Add clear label for each image type
+        const imageLabel = idx === -1 ? '【封面图】' : `【内容图${idx + 1}】`
+
         imageDescriptions.value[idx] = {
           id: uniqueDescId,
-          content: newDescription
+          content: descContent
         }
+
+        // Add label + ID marker + description
+        markedDescriptionsList.push(`<!-- DESC-${uniqueDescId} -->\n${imageLabel}\n${descContent}`)
       })
 
-      // Add to form with ID markers (one for each image)
-      const markedDescriptions = indicesToUpdate.map(idx => {
-        const desc = imageDescriptions.value[idx]
-        return `<!-- DESC-${desc.id} -->\n${newDescription}`
-      }).join('\n\n---\n\n')
-
-      // 根据模式决定是追加还是覆盖
-      if (visualDescMode.value === 'append' && formData.visual_description) {
-        // 追加模式：在现有描述后添加新描述，用分隔符隔开
-        formData.visual_description = formData.visual_description + '\n\n---\n\n' + markedDescriptions
+      // 追加新标记到现有描述（不删除已有内容）
+      const newMarkedDescriptions = markedDescriptionsList.join('\n\n---\n\n')
+      if (formData.visual_description) {
+        formData.visual_description = formData.visual_description + '\n\n---\n\n' + newMarkedDescriptions
       } else {
-        // 覆盖模式或首次生成
-        formData.visual_description = markedDescriptions
+        formData.visual_description = newMarkedDescriptions
       }
+
+      console.log(`[AnalyzeConfirmModal] Generated ${newIndicesToGenerate.length} new descriptions, appended to form`)
     } else {
       alert(result.error || 'AI 生成失败，请手动输入')
     }
