@@ -59,8 +59,11 @@ export function useImageDescriptionBadge(
     const desc = imageDescriptions.value[idx]
     if (!desc) return 'none'
 
-    // Check if description is still in the form by ID marker
-    const idMarker = `<!-- DESC-${desc.id} -->`
+    // Get this image's unique ID marker format: <!-- DESC-${uniqueId} -->
+    // Each image has its own unique ID with -{idx} suffix
+    const idMarker = `<!-- DESC-${desc.id}-${idx} -->`
+
+    // Check if this specific image's ID marker exists in form
     const isStillInForm = visualDescValue.value.includes(idMarker)
 
     return isStillInForm ? 'generated' : 'missing'
