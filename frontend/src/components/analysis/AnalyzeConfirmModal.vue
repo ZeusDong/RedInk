@@ -16,12 +16,30 @@
 
           <!-- Body -->
           <div class="modal-body">
+            <!-- 修改警告横幅 -->
+            <div v-if="modifiedFields.length > 0" class="modification-warning-banner">
+              <div class="warning-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+              </div>
+              <div class="warning-content">
+                <div class="warning-title">⚠️ 检测到内容修改</div>
+                <div class="warning-message">以下字段已从原始记录修改：{{ modifiedFields.map(f => f.fieldLabel).join('、') }}</div>
+                <div class="warning-hint">修改后的内容将覆盖原始数据，请确认后再提交</div>
+              </div>
+            </div>
             <!-- 战略背景 -->
             <section class="form-section">
               <h3 class="section-title">【战略背景】</h3>
 
-              <div class="form-group">
-                <label class="form-label required">所属赛道</label>
+              <div class="form-group" :class="{ 'field-modified': isFieldModified('industry') }">
+                <label class="form-label required">
+                  所属赛道
+                  <span v-if="isFieldModified('industry')" class="modified-badge">已修改</span>
+                </label>
                 <select v-model="formData.industry" class="form-select" :class="{ error: errors.industry }">
                   <option value="">请选择</option>
                   <option value="AI工具">AI工具</option>
@@ -40,8 +58,11 @@
               </div>
 
               <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label required">账号粉丝量</label>
+                <div class="form-group" :class="{ 'field-modified': isFieldModified('follower_count') }">
+                  <label class="form-label required">
+                    账号粉丝量
+                    <span v-if="isFieldModified('follower_count')" class="modified-badge">已修改</span>
+                  </label>
                   <input
                     v-model.number="formData.follower_count"
                     type="number"
@@ -53,8 +74,11 @@
                   <span v-if="errors.follower_count" class="form-error">{{ errors.follower_count }}</span>
                 </div>
 
-                <div class="form-group">
-                  <label class="form-label">发布时间</label>
+                <div class="form-group" :class="{ 'field-modified': isFieldModified('published_at') }">
+                  <label class="form-label">
+                    发布时间
+                    <span v-if="isFieldModified('published_at')" class="modified-badge">已修改</span>
+                  </label>
                   <input
                     v-model="formData.published_at"
                     type="date"
@@ -63,8 +87,11 @@
                 </div>
               </div>
 
-              <div class="form-group">
-                <label class="form-label required">数据表现</label>
+              <div class="form-group" :class="{ 'field-modified': isFieldModified('likes_count') || isFieldModified('saves_count') || isFieldModified('comments_count') }">
+                <label class="form-label required">
+                  数据表现
+                  <span v-if="isFieldModified('likes_count') || isFieldModified('saves_count') || isFieldModified('comments_count')" class="modified-badge">已修改</span>
+                </label>
                 <div class="metrics-inputs">
                   <div class="metric-input">
                     <span class="metric-label">👍 点赞</span>
@@ -105,8 +132,11 @@
             <section class="form-section">
               <h3 class="section-title">【内容本体】</h3>
 
-              <div class="form-group">
-                <label class="form-label required">标题/封面文案</label>
+              <div class="form-group" :class="{ 'field-modified': isFieldModified('title') }">
+                <label class="form-label required">
+                  标题/封面文案
+                  <span v-if="isFieldModified('title')" class="modified-badge">已修改</span>
+                </label>
                 <input
                   v-model="formData.title"
                   type="text"
@@ -119,8 +149,11 @@
                 <span v-if="errors.title" class="form-error">{{ errors.title }}</span>
               </div>
 
-              <div class="form-group">
-                <label class="form-label required">正文/脚本全文</label>
+              <div class="form-group" :class="{ 'field-modified': isFieldModified('content') }">
+                <label class="form-label required">
+                  正文/脚本全文
+                  <span v-if="isFieldModified('content')" class="modified-badge">已修改</span>
+                </label>
                 <textarea
                   v-model="formData.content"
                   class="form-textarea"
@@ -263,8 +296,11 @@
               </div>
 
               <!-- 视觉描述 - 卡片式 -->
-              <div class="form-group">
-                <label class="form-label required">视觉描述</label>
+              <div class="form-group" :class="{ 'field-modified': isFieldModified('visual_description') }">
+                <label class="form-label required">
+                  视觉描述
+                  <span v-if="isFieldModified('visual_description')" class="modified-badge">已修改</span>
+                </label>
 
                 <!-- 卡片列表 -->
                 <div v-if="parsedImageDescriptions.length > 0" class="image-desc-cards">
@@ -336,8 +372,11 @@
                 <span v-if="errors.visual_description" class="form-error">{{ errors.visual_description }}</span>
               </div>
 
-              <div class="form-group">
-                <label class="form-label">高赞评论</label>
+              <div class="form-group" :class="{ 'field-modified': isFieldModified('top_comments') }">
+                <label class="form-label">
+                  高赞评论
+                  <span v-if="isFieldModified('top_comments')" class="modified-badge">已修改</span>
+                </label>
                 <div class="comments-list">
                   <!-- Main comments -->
                   <div v-for="(comment, commentIndex) in formData.top_comments" :key="comment.id" class="comment-card">
@@ -534,6 +573,96 @@ const isLoading = ref(false)
 
 // 存储初始化完成时的表单数据快照（用于比较是否真的有变化）
 const initialFormDataSnapshot = ref<string>('')
+
+// 存储原始记录数据（用于字段级别的比较）
+const originalRecordData = ref<{
+  record_id: string
+  title: string
+  content: string
+  industry: string
+  follower_count: number
+  published_at: string
+  likes_count: number
+  saves_count: number
+  comments_count: number
+  visual_description: string
+  top_comments: Comment[]
+}>({
+  record_id: '',
+  title: '',
+  content: '',
+  industry: '',
+  follower_count: 0,
+  published_at: '',
+  likes_count: 0,
+  saves_count: 0,
+  comments_count: 0,
+  visual_description: '',
+  top_comments: []
+})
+
+// 字段级别的变化追踪
+interface FieldChange {
+  fieldName: string
+  fieldLabel: string
+  originalValue: any
+  currentValue: any
+  hasChanged: boolean
+}
+
+const fieldChanges = ref<Record<string, FieldChange>>({})
+
+// 获取已修改的字段列表
+const modifiedFields = computed(() => {
+  return Object.values(fieldChanges.value).filter(f => f.hasChanged)
+})
+
+// 检查字段是否被修改
+function isFieldModified(fieldName: string): boolean {
+  return fieldChanges.value[fieldName]?.hasChanged || false
+}
+
+// 更新字段变化状态
+function updateFieldChanges() {
+  if (!originalRecordData.value.title && !isLoading.value) return
+
+  const fields: Array<{ key: keyof typeof formData, label: string }> = [
+    { key: 'title', label: '标题' },
+    { key: 'content', label: '正文' },
+    { key: 'industry', label: '所属赛道' },
+    { key: 'follower_count', label: '粉丝量' },
+    { key: 'published_at', label: '发布时间' },
+    { key: 'likes_count', label: '点赞数' },
+    { key: 'saves_count', label: '收藏数' },
+    { key: 'comments_count', label: '评论数' },
+    { key: 'visual_description', label: '视觉描述' }
+  ]
+
+  fields.forEach(({ key, label }) => {
+    const original = originalRecordData.value[key]
+    const current = formData[key]
+    const hasChanged = JSON.stringify(original) !== JSON.stringify(current)
+
+    fieldChanges.value[key] = {
+      fieldName: key,
+      fieldLabel: label,
+      originalValue: original,
+      currentValue: current,
+      hasChanged
+    }
+  })
+
+  // 特殊处理评论（因为结构复杂）
+  const originalComments = JSON.stringify(originalRecordData.value.top_comments)
+  const currentComments = JSON.stringify(formData.top_comments)
+  fieldChanges.value['top_comments'] = {
+    fieldName: 'top_comments',
+    fieldLabel: '高赞评论',
+    originalValue: originalRecordData.value.top_comments,
+    currentValue: formData.top_comments,
+    hasChanged: originalComments !== currentComments
+  }
+}
 
 // 视觉描述生成模式：'append'（追加）或 'replace'（覆盖）
 const visualDescMode = ref<'append' | 'replace'>('append')
@@ -872,6 +1001,9 @@ watch(formData, () => {
   })
 
   hasUnsavedChanges.value = (currentSnapshot !== initialFormDataSnapshot.value)
+
+  // Update field-level change tracking
+  updateFieldChanges()
 }, { deep: true })
 
 async function loadDraftOrRecord() {
@@ -963,6 +1095,22 @@ async function loadDraftOrRecord() {
           top_comments: formData.top_comments
         })
 
+        // Store original data for field-level comparison
+        // For drafts, treat the draft as the original
+        originalRecordData.value = {
+          title: formData.title,
+          content: formData.content,
+          industry: formData.industry,
+          follower_count: formData.follower_count,
+          published_at: formData.published_at,
+          likes_count: formData.likes_count,
+          saves_count: formData.saves_count,
+          comments_count: formData.comments_count,
+          visual_description: formData.visual_description,
+          top_comments: JSON.parse(JSON.stringify(formData.top_comments))
+        }
+        fieldChanges.value = {}  // Reset field changes after loading draft
+
         // Reset unsaved flag after loading draft
         hasUnsavedChanges.value = false
         // Set isLoading to false AFTER resetting hasUnsavedChanges to avoid race condition
@@ -1002,6 +1150,22 @@ async function loadDraftOrRecord() {
       visual_description: formData.visual_description,
       top_comments: formData.top_comments
     })
+
+    // Store original data for field-level comparison when loading from record
+    originalRecordData.value = {
+      record_id: formData.record_id,
+      title: formData.title,
+      content: formData.content,
+      industry: formData.industry,
+      follower_count: formData.follower_count,
+      published_at: formData.published_at,
+      likes_count: formData.likes_count,
+      saves_count: formData.saves_count,
+      comments_count: formData.comments_count,
+      visual_description: formData.visual_description,
+      top_comments: JSON.parse(JSON.stringify(formData.top_comments))
+    }
+    fieldChanges.value = {}  // Reset field changes after loading from record
 
     // Reset unsaved flag after loading from record
     hasUnsavedChanges.value = false
@@ -2530,5 +2694,122 @@ async function checkLocalImages() {
   border-color: #ff2442;
   color: #ff2442;
   background: #ffeee8;
+}
+
+/* ========== 修改警告横幅 ========== */
+.modification-warning-banner {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, #fff8f0 0%, #ffede6 100%);
+  border: 2px solid #ff9800;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  animation: warning-pulse 2s ease-in-out infinite;
+}
+
+@keyframes warning-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 152, 0, 0);
+  }
+}
+
+.warning-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ff9800;
+  color: white;
+  border-radius: 50%;
+  animation: icon-shake 0.5s ease-in-out;
+}
+
+@keyframes icon-shake {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-10deg); }
+  75% { transform: rotate(10deg); }
+}
+
+.warning-content {
+  flex: 1;
+}
+
+.warning-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #e65100;
+  margin-bottom: 6px;
+}
+
+.warning-message {
+  font-size: 13px;
+  color: #bf360c;
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.warning-hint {
+  font-size: 12px;
+  color: #e65100;
+  opacity: 0.8;
+  font-style: italic;
+}
+
+/* ========== 字段修改状态指示器 ========== */
+.modified-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: #ff5722;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  margin-left: 8px;
+  animation: badge-appear 0.3s ease-out;
+}
+
+@keyframes badge-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.field-modified {
+  position: relative;
+}
+
+.field-modified::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  width: 4px;
+  height: calc(100% - 16px);
+  background: #ff5722;
+  border-radius: 2px;
+  animation: slide-in-left 0.3s ease-out;
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 </style>
