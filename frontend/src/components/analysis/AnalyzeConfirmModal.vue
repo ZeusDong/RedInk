@@ -1,12 +1,12 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="visible" class="modal-overlay" @click.self="handleClose">
+      <div v-if="visible" class="modal-overlay" @click.self="handleClose(false)">
         <div class="confirm-modal">
           <!-- Header -->
           <header class="modal-header">
             <h2 class="modal-title">AI 分析确认</h2>
-            <button class="close-btn" @click="handleClose" title="关闭">
+            <button class="close-btn" @click="handleClose(false)" title="关闭">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -526,6 +526,15 @@ const saving = ref(false)
 const submitting = ref(false)
 const generatingVisual = ref(false)
 
+// 追踪是否有未保存的修改
+const hasUnsavedChanges = ref(false)
+
+// 标记是否正在加载数据（避免加载期间触发未保存标记）
+const isLoading = ref(false)
+
+// 存储初始化完成时的表单数据快照（用于比较是否真的有变化）
+const initialFormDataSnapshot = ref<string>('')
+
 // 视觉描述生成模式：'append'（追加）或 'replace'（覆盖）
 const visualDescMode = ref<'append' | 'replace'>('append')
 
@@ -838,95 +847,170 @@ watch(() => formData.visual_description, (newVal, oldVal) => {
   console.log('  New value preview:', newVal?.slice(0, 200) + (newVal?.length > 200 ? '...' : ''))
 }, { immediate: true })
 
+// 监听表单数据变化，标记为未保存
+watch(formData, () => {
+  // Skip if this is the initial load (record hasn't been loaded yet)
+  if (!formData.record_id) return
+  // Skip if currently loading data
+  if (isLoading.value) return
+  // Skip if no snapshot yet (not initialized)
+  if (!initialFormDataSnapshot.value) return
+
+  // Compare with initial snapshot to detect real changes
+  const currentSnapshot = JSON.stringify({
+    record_id: formData.record_id,
+    industry: formData.industry,
+    follower_count: formData.follower_count,
+    published_at: formData.published_at,
+    likes_count: formData.likes_count,
+    saves_count: formData.saves_count,
+    comments_count: formData.comments_count,
+    title: formData.title,
+    content: formData.content,
+    visual_description: formData.visual_description,
+    top_comments: formData.top_comments
+  })
+
+  hasUnsavedChanges.value = (currentSnapshot !== initialFormDataSnapshot.value)
+}, { deep: true })
+
 async function loadDraftOrRecord() {
   if (!props.record) return
 
-  // 先尝试加载草稿
+  isLoading.value = true
+  // IMPORTANT: Reset hasUnsavedChanges BEFORE any data modifications
+  // This ensures that even if watch is triggered during async operations, it will be overridden
+  hasUnsavedChanges.value = false
   try {
-    const response = await fetch(`/api/analysis/draft?record_id=${props.record.record_id}`)
-    const result = await response.json()
+    // 先尝试加载草稿
+    try {
+      const response = await fetch(`/api/analysis/draft?record_id=${props.record.record_id}`)
+      const result = await response.json()
 
-    if (result.success && result.data) {
-      // Debug: 打印草稿数据
-      console.log('[AnalyzeConfirmModal] Loading draft data:', result.data)
-      console.log('[AnalyzeConfirmModal] Draft visual_description:', result.data.visual_description)
-      console.log('[AnalyzeConfirmModal] Draft image_descriptions:', result.data.image_descriptions)
+      if (result.success && result.data) {
+        // Debug: 打印草稿数据
+        console.log('[AnalyzeConfirmModal] Loading draft data:', result.data)
+        console.log('[AnalyzeConfirmModal] Draft visual_description:', result.data.visual_description)
+        console.log('[AnalyzeConfirmModal] Draft image_descriptions:', result.data.image_descriptions)
 
-      // 加载草稿数据
-      Object.assign(formData, {
-        record_id: result.data.record_id || props.record.record_id,
-        industry: result.data.industry || '',
-        follower_count: result.data.follower_count || 0,
-        published_at: result.data.published_at ? result.data.published_at.split('T')[0] : '',
-        likes_count: result.data.likes_count || 0,
-        saves_count: result.data.saves_count || 0,
-        comments_count: result.data.comments_count || 0,
-        title: result.data.title || '',
-        content: result.data.content || '',
-        visual_description: result.data.visual_description || '',
-        top_comments: migrateTopComments(result.data.top_comments || [])
-      })
+        // 加载草稿数据
+        Object.assign(formData, {
+          record_id: result.data.record_id || props.record.record_id,
+          industry: result.data.industry || '',
+          follower_count: result.data.follower_count || 0,
+          published_at: result.data.published_at ? result.data.published_at.split('T')[0] : '',
+          likes_count: result.data.likes_count || 0,
+          saves_count: result.data.saves_count || 0,
+          comments_count: result.data.comments_count || 0,
+          title: result.data.title || '',
+          content: result.data.content || '',
+          visual_description: result.data.visual_description || '',
+          top_comments: migrateTopComments(result.data.top_comments || [])
+        })
 
-      // Load image descriptions from draft
-      if (result.data.image_descriptions) {
-        imageDescriptions.value = result.data.image_descriptions
-      } else {
-        imageDescriptions.value = {}
-      }
-
-      // Fix: 如果 visual_description 为空但 image_descriptions 有内容，则重建 visual_description
-      if (!formData.visual_description.trim() && Object.keys(imageDescriptions.value).length > 0) {
-        console.log('[AnalyzeConfirmModal] Reconstructing visual_description from image_descriptions metadata')
-        const reconstructedParts: string[] = []
-
-        // 按 index 顺序重建 (-1 优先，然后 0, 1, 2...)
-        const sortedIndices = Object.keys(imageDescriptions.value)
-          .map(k => parseInt(k, 10))
-          .sort((a, b) => {
-            // -1 (封面) 排在最前面
-            if (a === -1) return -1
-            if (b === -1) return 1
-            return a - b
-          })
-
-        for (const idx of sortedIndices) {
-          const desc = imageDescriptions.value[idx]
-          if (!desc) continue
-
-          // 生成标签
-          const label = idx === -1 ? '【封面图】' : `【内容图${idx + 1}】`
-
-          // 格式: <!-- DESC-${uniqueId} -->\n${label}\n${content}
-          reconstructedParts.push(`<!-- DESC-${desc.id} -->\n${label}\n${desc.content}`)
+        // Load image descriptions from draft
+        if (result.data.image_descriptions) {
+          imageDescriptions.value = result.data.image_descriptions
+        } else {
+          imageDescriptions.value = {}
         }
 
-        formData.visual_description = reconstructedParts.join('\n\n---\n\n')
-        console.log('[AnalyzeConfirmModal] Reconstructed visual_description:', formData.visual_description.slice(0, 200) + '...')
+        // Fix: 如果 visual_description 为空但 image_descriptions 有内容，则重建 visual_description
+        if (!formData.visual_description.trim() && Object.keys(imageDescriptions.value).length > 0) {
+          console.log('[AnalyzeConfirmModal] Reconstructing visual_description from image_descriptions metadata')
+          const reconstructedParts: string[] = []
+
+          // 按 index 顺序重建 (-1 优先，然后 0, 1, 2...)
+          const sortedIndices = Object.keys(imageDescriptions.value)
+            .map(k => parseInt(k, 10))
+            .sort((a, b) => {
+              // -1 (封面) 排在最前面
+              if (a === -1) return -1
+              if (b === -1) return 1
+              return a - b
+            })
+
+          for (const idx of sortedIndices) {
+            const desc = imageDescriptions.value[idx]
+            if (!desc) continue
+
+            // 生成标签
+            const label = idx === -1 ? '【封面图】' : `【内容图${idx + 1}】`
+
+            // 格式: <!-- DESC-${uniqueId} -->\n${label}\n${content}
+            reconstructedParts.push(`<!-- DESC-${desc.id} -->\n${label}\n${desc.content}`)
+          }
+
+          formData.visual_description = reconstructedParts.join('\n\n---\n\n')
+          console.log('[AnalyzeConfirmModal] Reconstructed visual_description:', formData.visual_description.slice(0, 200) + '...')
+        }
+
+        console.log('[AnalyzeConfirmModal] Loaded formData.visual_description:', formData.visual_description)
+        console.log('[AnalyzeConfirmModal] Loaded imageDescriptions:', imageDescriptions.value)
+
+        // Save snapshot after loading draft
+        initialFormDataSnapshot.value = JSON.stringify({
+          record_id: formData.record_id,
+          industry: formData.industry,
+          follower_count: formData.follower_count,
+          published_at: formData.published_at,
+          likes_count: formData.likes_count,
+          saves_count: formData.saves_count,
+          comments_count: formData.comments_count,
+          title: formData.title,
+          content: formData.content,
+          visual_description: formData.visual_description,
+          top_comments: formData.top_comments
+        })
+
+        // Reset unsaved flag after loading draft
+        hasUnsavedChanges.value = false
+        // Set isLoading to false AFTER resetting hasUnsavedChanges to avoid race condition
+        isLoading.value = false
+        return
       }
-
-      console.log('[AnalyzeConfirmModal] Loaded formData.visual_description:', formData.visual_description)
-      console.log('[AnalyzeConfirmModal] Loaded imageDescriptions:', imageDescriptions.value)
-
-      return
+    } catch (e) {
+      console.error('[AnalyzeConfirmModal] Failed to load draft:', e)
     }
-  } catch (e) {
-    console.error('[AnalyzeConfirmModal] Failed to load draft:', e)
-  }
 
-  // 从 record 加载数据
-  formData.record_id = props.record.record_id
-  // Clear image descriptions when loading from record (not draft)
-  imageDescriptions.value = {}
-  formData.industry = props.record.industry || ''
-  formData.follower_count = props.record.blogger?.follower_count || 0
-  formData.published_at = props.record.created_at ? props.record.created_at.split('T')[0] : ''
-  formData.likes_count = props.record.metrics?.likes || 0
-  formData.saves_count = props.record.metrics?.saves || 0
-  formData.comments_count = props.record.metrics?.comments || 0
-  formData.title = props.record.title || ''
-  formData.content = props.record.body || ''
-  formData.visual_description = ''
-  formData.top_comments = migrateTopComments([])
+    // 从 record 加载数据
+    formData.record_id = props.record.record_id
+    // Clear image descriptions when loading from record (not draft)
+    imageDescriptions.value = {}
+    formData.industry = props.record.industry || ''
+    formData.follower_count = props.record.blogger?.follower_count || 0
+    formData.published_at = props.record.created_at ? props.record.created_at.split('T')[0] : ''
+    formData.likes_count = props.record.metrics?.likes || 0
+    formData.saves_count = props.record.metrics?.saves || 0
+    formData.comments_count = props.record.metrics?.comments || 0
+    formData.title = props.record.title || ''
+    formData.content = props.record.body || ''
+    formData.visual_description = ''
+    formData.top_comments = migrateTopComments([])
+
+    // Save snapshot after loading from record
+    initialFormDataSnapshot.value = JSON.stringify({
+      record_id: formData.record_id,
+      industry: formData.industry,
+      follower_count: formData.follower_count,
+      published_at: formData.published_at,
+      likes_count: formData.likes_count,
+      saves_count: formData.saves_count,
+      comments_count: formData.comments_count,
+      title: formData.title,
+      content: formData.content,
+      visual_description: formData.visual_description,
+      top_comments: formData.top_comments
+    })
+
+    // Reset unsaved flag after loading from record
+    hasUnsavedChanges.value = false
+    // Set isLoading to false AFTER resetting hasUnsavedChanges to avoid race condition
+    isLoading.value = false
+  } catch (e) {
+    // Only set isLoading to false in catch block
+    isLoading.value = false
+  }
 }
 
 // ========== Migration Helper ==========
@@ -1043,7 +1127,10 @@ async function handleSaveDraft() {
 
     if (result.success) {
       emit('save-draft', result.data)
-      handleClose()
+      // Reset unsaved flag after successful save
+      hasUnsavedChanges.value = false
+      // Keep modal open and show success message
+      alert('✅ 草稿已保存成功！')
     } else {
       alert(result.error || '保存失败，请重试')
     }
@@ -1069,7 +1156,10 @@ async function handleSubmit() {
 
     if (result.success) {
       emit('submit', result.data)
-      handleClose()
+      // Reset unsaved flag after successful submit
+      hasUnsavedChanges.value = false
+      // Keep modal open and show success message
+      alert('✅ AI 分析已成功提交！\n\n您可以前往「分析结果」页面查看分析进度和结果。')
     } else {
       alert(result.error || '提交失败，请重试')
     }
@@ -1231,17 +1321,12 @@ function clearImageDescription(idx: number) {
   delete imageDescriptions.value[idx]
 }
 
-function handleClose() {
-  // Check for unsaved changes in comments
-  const hasComments = formData.top_comments.some(
-    c => c.content && c.content.trim()
-  )
-  const hasSubComments = formData.top_comments.some(
-    c => c.sub_comments && c.sub_comments.some(sc => sc.content && sc.content.trim())
-  )
-
-  if ((hasComments || hasSubComments) && !confirm('确定要关闭吗？未保存的内容将会丢失。')) {
-    return
+function handleClose(skipConfirm = false) {
+  // Only check for unsaved changes if not explicitly skipping confirmation
+  if (!skipConfirm && hasUnsavedChanges.value) {
+    if (!confirm('确定要关闭吗？未保存的内容将会丢失。')) {
+      return
+    }
   }
   emit('close')
 }
