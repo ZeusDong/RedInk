@@ -203,7 +203,30 @@
 
               <!-- 操作栏 -->
               <div v-if="hasImages" class="visual-action-bar">
-                <span class="selection-count">已选择 {{ selectedCount }} 张图片</span>
+                <div class="action-left">
+                  <span class="selection-count">已选择 {{ selectedCount }} 张图片</span>
+                  <!-- 追加/覆盖模式切换 -->
+                  <div class="mode-toggle" v-if="formData.visual_description">
+                    <button
+                      type="button"
+                      class="mode-btn"
+                      :class="{ active: visualDescMode === 'append' }"
+                      @click="visualDescMode = 'append'"
+                      title="新生成的描述将追加到现有描述后面"
+                    >
+                      追加
+                    </button>
+                    <button
+                      type="button"
+                      class="mode-btn"
+                      :class="{ active: visualDescMode === 'replace' }"
+                      @click="visualDescMode = 'replace'"
+                      title="新生成的描述将替换现有描述"
+                    >
+                      覆盖
+                    </button>
+                  </div>
+                </div>
                 <button
                   type="button"
                   class="btn-generate"
@@ -324,6 +347,9 @@ const errors = reactive<Record<string, string>>({})
 const saving = ref(false)
 const submitting = ref(false)
 const generatingVisual = ref(false)
+
+// 视觉描述生成模式：'append'（追加）或 'replace'（覆盖）
+const visualDescMode = ref<'append' | 'replace'>('append')
 
 // ========== 新增：图片选择状态 ==========
 
@@ -541,6 +567,13 @@ async function handleGenerateVisualDesc() {
     return
   }
 
+  // 覆盖模式下，如果已有描述需要确认
+  if (visualDescMode.value === 'replace' && formData.visual_description) {
+    if (!confirm('确定要覆盖现有的视觉描述吗？')) {
+      return
+    }
+  }
+
   generatingVisual.value = true
   try {
     const response = await fetch('/api/analysis/visual-desc', {
@@ -548,13 +581,22 @@ async function handleGenerateVisualDesc() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         record_id: props.record.record_id,
-        image_indices: selectedImageIndices.value  // 使用用户选择的索引
+        image_indices: selectedImageIndices.value
       })
     })
     const result = await response.json()
 
     if (result.success && result.data?.description) {
-      formData.visual_description = result.data.description
+      const newDescription = result.data.description
+
+      // 根据模式决定是追加还是覆盖
+      if (visualDescMode.value === 'append' && formData.visual_description) {
+        // 追加模式：在现有描述后添加新描述，用分隔符隔开
+        formData.visual_description = formData.visual_description + '\n\n---\n\n' + newDescription
+      } else {
+        // 覆盖模式或首次生成
+        formData.visual_description = newDescription
+      }
     } else {
       alert(result.error || 'AI 生成失败，请手动输入')
     }
@@ -1198,11 +1240,51 @@ async function checkLocalImages() {
   background: #f8f7f5;
   border-radius: 8px;
   margin-bottom: 16px;
+  gap: 12px;
+}
+
+.action-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
 }
 
 .selection-count {
   font-size: 13px;
   color: #666;
+  white-space: nowrap;
+}
+
+/* 模式切换按钮 */
+.mode-toggle {
+  display: inline-flex;
+  background: #e8e6e3;
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.mode-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: #666;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.mode-btn:hover {
+  color: #333;
+}
+
+.mode-btn.active {
+  background: white;
+  color: #ff2442;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn-generate {
@@ -1254,5 +1336,31 @@ async function checkLocalImages() {
   .content-images-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* ========== Image Badge Styles ========== */
+.image-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border: 2px solid white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: white;
+  z-index: 2;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.image-badge.generated {
+  background: #52c41a;
+}
+
+.image-badge.missing {
+  background: #faad14;
 }
 </style>
