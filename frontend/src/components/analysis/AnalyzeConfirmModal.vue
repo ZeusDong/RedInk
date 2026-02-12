@@ -656,6 +656,7 @@ async function handleGenerateVisualDesc() {
 
       // Save description with unique ID for EACH image
       indicesToUpdate.forEach(idx => {
+        // Generate unique ID per image: timestamp-random-index
         const uniqueDescId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${idx}`
 
         imageDescriptions.value[idx] = {
@@ -664,17 +665,19 @@ async function handleGenerateVisualDesc() {
         }
       })
 
-      // Add to form with ID marker (only for display, not used for tracking)
-      const descId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-      const markedDesc = `<!-- DESC-${descId} -->\n${newDescription}`
+      // Add to form with ID markers (one for each image)
+      const markedDescriptions = indicesToUpdate.map(idx => {
+        const desc = imageDescriptions.value[idx]
+        return `<!-- DESC-${desc.id} -->\n${newDescription}`
+      }).join('\n\n---\n\n')
 
       // 根据模式决定是追加还是覆盖
       if (visualDescMode.value === 'append' && formData.visual_description) {
         // 追加模式：在现有描述后添加新描述，用分隔符隔开
-        formData.visual_description = formData.visual_description + '\n\n---\n\n' + markedDesc
+        formData.visual_description = formData.visual_description + '\n\n---\n\n' + markedDescriptions
       } else {
         // 覆盖模式或首次生成
-        formData.visual_description = markedDesc
+        formData.visual_description = markedDescriptions
       }
     } else {
       alert(result.error || 'AI 生成失败，请手动输入')
