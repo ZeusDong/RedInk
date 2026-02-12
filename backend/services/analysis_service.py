@@ -418,6 +418,9 @@ class AnalysisService:
                 'content': data.get('content', ''),
                 'visual_description': data.get('visual_description', ''),
                 'top_comments': data.get('top_comments', []),
+                # Image description metadata
+                'image_descriptions': data.get('image_descriptions', {}),
+                'generated_image_indices': data.get('generated_image_indices', []),
                 'created_at': data.get('created_at') or datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat()
             }
