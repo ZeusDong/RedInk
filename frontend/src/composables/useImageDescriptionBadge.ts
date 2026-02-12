@@ -4,12 +4,12 @@
  * Composable for managing image description badge states
  */
 
-import { computed, ref, type Ref } from 'vue'
+import { computed, ref, type Ref, watch } from 'vue'
 import type { ImageDescription, BadgeState } from '@/types/analysis'
 
 export interface BadgeStateOptions {
   imageDescriptions: Ref<Record<number, ImageDescription>>
-  visualDescription: Ref<string>
+  visualDescription: Ref<string> | string  // Accept both Ref and string for flexibility
 }
 
 export interface BadgeStateReturn {
@@ -17,6 +17,7 @@ export interface BadgeStateReturn {
   getBadgeIcon: (state: BadgeState) => string
   getBadgeTitle: (state: BadgeState) => string
   generatedImageIndices: Ref<Set<number>>
+  visualDescValue: Ref<string>  // Expose the tracked value for debugging
 }
 
 /**
@@ -29,6 +30,18 @@ export function useImageDescriptionBadge(
   options: BadgeStateOptions
 ): BadgeStateReturn {
   const { imageDescriptions, visualDescription } = options
+
+  // Create a ref to track the current description value for reactivity
+  const visualDescValue = ref(
+    typeof visualDescription === 'string' ? visualDescription : visualDescription.value
+  )
+
+  // Watch for changes if visualDescription is a Ref
+  if (typeof visualDescription !== 'string') {
+    watch(visualDescription, (newVal) => {
+      visualDescValue.value = newVal
+    }, { immediate: true })
+  }
 
   // Computed set of indices that have generated descriptions
   const generatedImageIndices = computed(() => {
@@ -48,7 +61,7 @@ export function useImageDescriptionBadge(
 
     // Check if description is still in the form by ID marker
     const idMarker = `<!-- DESC-${desc.id} -->`
-    const isStillInForm = visualDescription.value.includes(idMarker)
+    const isStillInForm = visualDescValue.value.includes(idMarker)
 
     return isStillInForm ? 'generated' : 'missing'
   }
@@ -79,6 +92,7 @@ export function useImageDescriptionBadge(
     getBadgeState,
     getBadgeIcon,
     getBadgeTitle,
-    generatedImageIndices
+    generatedImageIndices,
+    visualDescValue
   }
 }

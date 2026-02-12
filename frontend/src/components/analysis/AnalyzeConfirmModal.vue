@@ -396,7 +396,7 @@ const {
   getBadgeTitle
 } = useImageDescriptionBadge({
   imageDescriptions,
-  visualDescription: computed(() => formData.visual_description || '')
+  visualDescription: formData.visual_description  // Pass string directly, composable will wrap in ref
 })
 
 // ========== 新增：计算属性 ==========
