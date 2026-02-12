@@ -642,9 +642,8 @@ async function handleGenerateVisualDesc() {
 
     if (result.success && result.data?.description) {
       const newDescription = result.data.description
-      const descId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
-      // Mark images as generated
+      // Mark images as generated - assign unique ID to each image
       const indicesToUpdate: number[] = []
       if (selectedImageIndices.value.includes(-1)) {
         indicesToUpdate.push(-1) // Cover image index
@@ -655,15 +654,18 @@ async function handleGenerateVisualDesc() {
         }
       })
 
-      // Save description for each selected image
+      // Save description with unique ID for EACH image
       indicesToUpdate.forEach(idx => {
+        const uniqueDescId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${idx}`
+
         imageDescriptions.value[idx] = {
-          id: descId,
+          id: uniqueDescId,
           content: newDescription
         }
       })
 
-      // Add to form with ID marker
+      // Add to form with ID marker (only for display, not used for tracking)
+      const descId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
       const markedDesc = `<!-- DESC-${descId} -->\n${newDescription}`
 
       // 根据模式决定是追加还是覆盖
