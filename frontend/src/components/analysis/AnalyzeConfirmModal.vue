@@ -142,6 +142,16 @@
                 <div class="image-group cover-group">
                   <label class="group-label">【封面图】</label>
                   <div class="image-checkbox" :class="{ checked: coverSelected, error: coverLoadError }">
+                    <!-- Badge for cover image (index -1) -->
+                    <span
+                      v-if="getBadgeState(-1) !== 'none'"
+                      class="image-badge"
+                      :class="getBadgeState(-1)"
+                      :title="getBadgeTitle(getBadgeState(-1))"
+                    >
+                      {{ getBadgeIcon(getBadgeState(-1)) }}
+                    </span>
+
                     <input type="checkbox" v-model="coverSelected" />
                     <img
                       v-if="record?.cover_image"
@@ -170,6 +180,15 @@
                       class="image-checkbox"
                       :class="{ checked: isContentImageSelected(idx), error: contentLoadErrors.has(idx) }"
                     >
+                      <!-- Badge for content image -->
+                      <span
+                        v-if="getBadgeState(idx) !== 'none'"
+                        class="image-badge"
+                        :class="getBadgeState(idx)"
+                        :title="getBadgeTitle(getBadgeState(idx))"
+                      >
+                        {{ getBadgeIcon(getBadgeState(idx)) }}
+                      </span>
                       <input
                         type="checkbox"
                         :checked="isContentImageSelected(idx)"
