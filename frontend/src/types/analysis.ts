@@ -27,6 +27,26 @@ export interface ImageDescriptionDraft {
 export type BadgeState = 'none' | 'generated' | 'missing'
 
 /**
+ * Sub-comment (reply) within a top comment
+ */
+export interface SubComment {
+  id: string          // Unique identifier for v-for key
+  content: string      // Comment content
+  likes?: number       // Optional like count
+  is_blogger: boolean  // Whether this is the blogger's reply
+}
+
+/**
+ * Top-level comment with optional sub-comments
+ */
+export interface Comment {
+  id: string                    // Unique identifier for v-for key
+  content: string               // Comment content
+  likes?: number                // Optional like count
+  sub_comments?: SubComment[]   // Optional array of sub-comments
+}
+
+/**
  * Index convention:
  * -1 = cover image (封面图)
  * 0, 1, 2... = content images (内容图)

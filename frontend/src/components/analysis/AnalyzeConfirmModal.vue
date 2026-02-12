@@ -339,22 +339,119 @@
               <div class="form-group">
                 <label class="form-label">高赞评论</label>
                 <div class="comments-list">
-                  <div v-for="(comment, index) in formData.top_comments" :key="index" class="comment-item">
-                    <textarea
-                      v-model="formData.top_comments[index]"
-                      class="form-textarea comment-textarea"
-                      :placeholder="`评论 ${index + 1}`"
-                      rows="2"
-                    ></textarea>
-                    <button class="remove-comment-btn" @click="removeComment(index)" title="删除">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                      </svg>
-                    </button>
+                  <!-- Main comments -->
+                  <div v-for="(comment, commentIndex) in formData.top_comments" :key="comment.id" class="comment-card">
+                    <!-- Main comment header -->
+                    <div class="comment-card-header">
+                      <span class="comment-number">评论 {{ commentIndex + 1 }}</span>
+                      <button
+                        type="button"
+                        class="remove-comment-btn"
+                        @click="removeComment(commentIndex)"
+                        title="删除评论"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                      </button>
+                    </div>
+
+                    <!-- Main comment content -->
+                    <div class="comment-content">
+                      <textarea
+                        v-model="comment.content"
+                        class="form-textarea comment-textarea"
+                        placeholder="输入评论内容..."
+                        rows="3"
+                      ></textarea>
+                    </div>
+
+                    <!-- Main comment footer -->
+                    <div class="comment-footer">
+                      <button
+                        type="button"
+                        class="add-sub-comment-btn"
+                        @click="addSubComment(commentIndex)"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        添加回复
+                      </button>
+                      <div class="likes-wrapper">
+                        <label class="likes-label">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                          </svg>
+                          <input
+                            v-model.number="comment.likes"
+                            type="number"
+                            class="likes-input"
+                            placeholder="赞数"
+                            min="0"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <!-- Sub-comments -->
+                    <div v-if="comment.sub_comments && comment.sub_comments.length > 0" class="sub-comments-section">
+                      <div class="sub-comments-header">
+                        <span class="sub-comments-title">回复 ({{ comment.sub_comments.length }})</span>
+                      </div>
+                      <div class="sub-comments-grid">
+                        <div
+                          v-for="(subComment, subIndex) in comment.sub_comments"
+                          :key="subComment.id"
+                          class="sub-comment-card"
+                        >
+                          <div class="sub-comment-header">
+                            <label class="blogger-toggle" :class="{ active: subComment.is_blogger }">
+                              <input type="checkbox" v-model="subComment.is_blogger" />
+                              <span class="toggle-indicator"></span>
+                              <span class="toggle-label">博主</span>
+                            </label>
+                            <button
+                              type="button"
+                              class="remove-sub-comment-btn"
+                              @click="removeSubComment(commentIndex, subIndex)"
+                              title="删除回复"
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                              </svg>
+                            </button>
+                          </div>
+                          <textarea
+                            v-model="subComment.content"
+                            class="form-textarea sub-comment-textarea"
+                            placeholder="输入回复内容..."
+                            rows="2"
+                          ></textarea>
+                          <div class="sub-comment-footer">
+                            <label class="mini-likes">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                              </svg>
+                              <input
+                                v-model.number="subComment.likes"
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <button class="add-comment-btn" @click="addComment">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+
+                  <!-- Add main comment button -->
+                  <button type="button" class="add-comment-btn" @click="addComment">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <line x1="12" y1="5" x2="12" y2="19"></line>
                       <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
@@ -390,7 +487,7 @@
 import { ref, reactive, watch, onMounted, computed } from 'vue'
 import type { ReferenceRecord } from '@/api'
 import { useImageDescriptionBadge } from '@/composables/useImageDescriptionBadge'
-import type { ImageDescription } from '@/types/analysis'
+import type { ImageDescription, Comment, SubComment } from '@/types/analysis'
 
 interface Props {
   visible: boolean
@@ -418,7 +515,7 @@ const formData = reactive({
   title: '',
   content: '',
   visual_description: '',
-  top_comments: [] as string[]
+  top_comments: [] as Comment[]
 })
 
 // 验证错误
@@ -767,7 +864,7 @@ async function loadDraftOrRecord() {
         title: result.data.title || '',
         content: result.data.content || '',
         visual_description: result.data.visual_description || '',
-        top_comments: result.data.top_comments || []
+        top_comments: migrateTopComments(result.data.top_comments || [])
       })
 
       // Load image descriptions from draft
@@ -829,7 +926,31 @@ async function loadDraftOrRecord() {
   formData.title = props.record.title || ''
   formData.content = props.record.body || ''
   formData.visual_description = ''
-  formData.top_comments = []
+  formData.top_comments = migrateTopComments([])
+}
+
+// ========== Migration Helper ==========
+/**
+ * Migrate old string[] format to new Comment[] format
+ * @param comments - Comments from API (either string[] or Comment[])
+ */
+function migrateTopComments(comments: string[] | Comment[]): Comment[] {
+  if (!comments || comments.length === 0) {
+    return []
+  }
+
+  // Check if already in new format (first item has 'content' property)
+  if (typeof comments[0] === 'object' && 'content' in comments[0]) {
+    return comments as Comment[]
+  }
+
+  // Old format: string[] -> migrate to Comment[]
+  return (comments as string[]).map((content: string) => ({
+    id: generateId(),
+    content,
+    likes: undefined,
+    sub_comments: []
+  }))
 }
 
 function validate(): boolean {
@@ -881,6 +1002,18 @@ function validate(): boolean {
     const emptyCards = parsedImageDescriptions.value.filter(c => !c.content.trim())
     if (emptyCards.length === parsedImageDescriptions.value.length) {
       errors.visual_description = '请至少填写一张图片的视觉描述'
+      isValid = false
+    }
+  }
+
+  // Validate top comments: at least one non-empty comment
+  if (formData.top_comments.length === 0) {
+    errors.top_comments = '请至少添加一条高赞评论'
+    isValid = false
+  } else {
+    const hasValidComment = formData.top_comments.some(c => c.content && c.content.trim())
+    if (!hasValidComment) {
+      errors.top_comments = '请至少填写一条评论内容'
       isValid = false
     }
   }
@@ -1031,12 +1164,55 @@ async function handleGenerateVisualDesc() {
   }
 }
 
-function addComment() {
-  formData.top_comments.push('')
+// ========== Helper Methods for Comments ==========
+
+/**
+ * Generate unique ID for comments/sub-comments
+ */
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
 }
 
-function removeComment(index: number) {
+/**
+ * Add a new top-level comment
+ */
+function addComment(): void {
+  formData.top_comments.push({
+    id: generateId(),
+    content: '',
+    likes: undefined,
+    sub_comments: []
+  })
+}
+
+/**
+ * Add a new sub-comment to a parent comment
+ */
+function addSubComment(commentIndex: number): void {
+  const comment = formData.top_comments[commentIndex]
+  if (!comment.sub_comments) {
+    comment.sub_comments = []
+  }
+  comment.sub_comments.push({
+    id: generateId(),
+    content: '',
+    likes: undefined,
+    is_blogger: false
+  })
+}
+
+/**
+ * Remove a top-level comment
+ */
+function removeComment(index: number): void {
   formData.top_comments.splice(index, 1)
+}
+
+/**
+ * Remove a sub-comment from a parent comment
+ */
+function removeSubComment(commentIndex: number, subIndex: number): void {
+  formData.top_comments[commentIndex].sub_comments?.splice(subIndex, 1)
 }
 
 // ========== 新增：图片描述清除方法 ==========
@@ -1056,9 +1232,15 @@ function clearImageDescription(idx: number) {
 }
 
 function handleClose() {
-  // 检查是否有未保存的更改
-  const hasChanges = formData.visual_description || formData.top_comments.some(c => c.trim())
-  if (hasChanges && !confirm('确定要关闭吗？未保存的内容将会丢失。')) {
+  // Check for unsaved changes in comments
+  const hasComments = formData.top_comments.some(
+    c => c.content && c.content.trim()
+  )
+  const hasSubComments = formData.top_comments.some(
+    c => c.sub_comments && c.sub_comments.some(sc => sc.content && sc.content.trim())
+  )
+
+  if ((hasComments || hasSubComments) && !confirm('确定要关闭吗？未保存的内容将会丢失。')) {
     return
   }
   emit('close')
@@ -1400,66 +1582,9 @@ async function checkLocalImages() {
   to { transform: rotate(360deg); }
 }
 
-/* Comments */
-.comments-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+/* ========== Comments ========== */
 
-.comment-item {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.comment-textarea {
-  flex: 1;
-  min-height: 60px;
-  font-size: 13px;
-}
-
-.remove-comment-btn {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: #f8f7f5;
-  color: #999;
-  border-radius: 6px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-
-.remove-comment-btn:hover {
-  background: #ffeee8;
-  color: #ff2442;
-}
-
-.add-comment-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border: 1px dashed #ddd;
-  background: transparent;
-  color: #666;
-  border-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-  width: 100%;
-  justify-content: center;
-}
-
-.add-comment-btn:hover {
-  border-color: #ff2442;
-  color: #ff2442;
-  background: #ffeee8;
-}
+/* Legacy styles - removed in favor of Enhanced Comments below */
 
 /* Footer */
 .modal-footer {
@@ -1775,6 +1900,25 @@ async function checkLocalImages() {
   .content-images-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  /* Mobile comments layout */
+  .sub-comments-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .comment-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .add-sub-comment-btn {
+    justify-content: center;
+  }
+
+  .likes-wrapper {
+    justify-content: center;
+  }
 }
 
 /* ========== Image Badge Styles ========== */
@@ -1947,5 +2091,359 @@ async function checkLocalImages() {
   margin: 0;
   font-size: 13px;
   color: #999;
+}
+
+/* ========== Enhanced Comments Styles ========== */
+
+/* Comments list - more generous spacing */
+.comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Comment Card - main container */
+.comment-card {
+  background: #faf9f7;
+  border: 1px solid #e8e6e3;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.comment-card:hover {
+  border-color: #ddd;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+/* Comment Card Header */
+.comment-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #fff;
+  border-bottom: 1px solid #e8e6e3;
+}
+
+.comment-number {
+  font-size: 12px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Remove comment button */
+.remove-comment-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #bbb;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.remove-comment-btn:hover {
+  background: #ffeee8;
+  color: #ff2442;
+}
+
+/* Comment Content */
+.comment-content {
+  padding: 16px;
+}
+
+.comment-textarea {
+  width: 100%;
+  border: 1px solid #e0dedb;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 12px 14px;
+  background: white;
+  transition: all 0.2s;
+}
+
+.comment-textarea:focus {
+  outline: none;
+  border-color: #ff2442;
+  box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.08);
+}
+
+/* Comment Footer - action bar */
+.comment-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px 12px 16px;
+  gap: 16px;
+}
+
+/* Add sub-comment button */
+.add-sub-comment-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid #e0dedb;
+  background: white;
+  color: #666;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.add-sub-comment-btn:hover {
+  border-color: #ff2442;
+  color: #ff2442;
+  background: #ffeee8;
+}
+
+/* Likes wrapper */
+.likes-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.likes-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid #e0dedb;
+  border-radius: 6px;
+  color: #666;
+  font-size: 13px;
+}
+
+.likes-label svg {
+  color: #ffb347;
+  flex-shrink: 0;
+}
+
+.likes-input {
+  width: 60px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  text-align: right;
+}
+
+.likes-input:focus {
+  outline: none;
+}
+
+.likes-input::placeholder {
+  color: #bbb;
+  font-weight: 400;
+}
+
+/* Sub-comments Section */
+.sub-comments-section {
+  border-top: 1px solid #e8e6e3;
+  background: #fff;
+}
+
+.sub-comments-header {
+  padding: 10px 16px;
+  background: #f5f4f2;
+}
+
+.sub-comments-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Sub-comments Grid */
+.sub-comments-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+
+/* Sub-comment Card */
+.sub-comment-card {
+  background: #faf9f7;
+  border: 1px solid #e8e6e3;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.sub-comment-card:hover {
+  border-color: #ddd;
+}
+
+/* Sub-comment Header */
+.sub-comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: #f5f4f2;
+}
+
+/* Blogger toggle switch */
+.blogger-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #e8e6e3;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #999;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s;
+}
+
+.blogger-toggle input[type="checkbox"] {
+  display: none;
+}
+
+.toggle-indicator {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #bbb;
+  border-radius: 2px;
+  background: white;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.blogger-toggle.active {
+  background: #ff2442;
+  color: white;
+}
+
+.blogger-toggle.active .toggle-indicator {
+  background: white;
+  border-color: white;
+}
+
+.blogger-toggle.active .toggle-indicator::after {
+  content: '✓';
+  font-size: 9px;
+  color: #ff2442;
+  font-weight: bold;
+}
+
+.toggle-label {
+  line-height: 1;
+}
+
+/* Remove sub-comment button */
+.remove-sub-comment-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: #bbb;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.remove-sub-comment-btn:hover {
+  background: #ffeee8;
+  color: #ff2442;
+}
+
+/* Sub-comment textarea */
+.sub-comment-textarea {
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  background: transparent;
+  min-height: 60px;
+  resize: vertical;
+}
+
+.sub-comment-textarea:focus {
+  outline: none;
+  background: white;
+}
+
+/* Sub-comment footer */
+.sub-comment-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 10px;
+  border-top: 1px solid #e8e6e3;
+}
+
+.mini-likes {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #999;
+}
+
+.mini-likes svg {
+  color: #ffb347;
+}
+
+.mini-likes input {
+  width: 45px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: #666;
+  text-align: right;
+}
+
+.mini-likes input:focus {
+  outline: none;
+}
+
+/* Add comment button */
+.add-comment-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border: 1px dashed #ccc;
+  background: transparent;
+  color: #999;
+  border-radius: 10px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.25s;
+  width: 100%;
+  justify-content: center;
+  font-weight: 500;
+}
+
+.add-comment-btn:hover {
+  border-color: #ff2442;
+  color: #ff2442;
+  background: #ffeee8;
 }
 </style>

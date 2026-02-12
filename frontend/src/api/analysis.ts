@@ -7,6 +7,8 @@
  * - Visual description generation
  */
 
+import type { Comment } from '@/types/analysis'
+
 const API_BASE_URL = '/api/analysis'
 
 // ==================== Type Definitions ====================
@@ -27,7 +29,7 @@ export interface AnalysisDraft {
   title: string
   content: string
   visual_description: string
-  top_comments: string[]
+  top_comments: Comment[]
   // NEW: Image description tracking
   image_descriptions?: Record<number, {
     id: string
