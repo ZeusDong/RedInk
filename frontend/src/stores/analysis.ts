@@ -171,6 +171,23 @@ export const useAnalysisStore = defineStore('analysis', {
     },
 
     /**
+     * 刷新待分析笔记列表（分析完成后调用）
+     */
+    async refreshPendingRecords() {
+      try {
+        const response = await fetch('/api/analysis/pending?status=pending')
+        const data = await response.json()
+
+        if (data.success) {
+          this.pendingRecords = data.data || []
+          console.log('[AnalysisStore] Pending records refreshed, count:', this.pendingRecords.length)
+        }
+      } catch (e) {
+        console.error('[AnalysisStore] Failed to refresh pending records:', e)
+      }
+    },
+
+    /**
      * 切换数据源模式
      */
     setDataSourceMode(mode: AnalysisDataSourceMode) {
@@ -449,7 +466,7 @@ export const useAnalysisStore = defineStore('analysis', {
               }
             },
             // onComplete
-            onComplete: (data) => {
+            onComplete: async (data) => {
               console.log('[AnalysisStore] Analysis complete:', data.record_id)
               this.setAnalysisResult(data.record_id, {
                 record_id: data.record_id,
@@ -457,6 +474,8 @@ export const useAnalysisStore = defineStore('analysis', {
                 content: data.content,
                 created_at: new Date().toISOString()
               })
+              // 刷新待分析列表（移除已完成的笔记）
+              await this.refreshPendingRecords()
               if (onStep) {
                 onStep('保存完成')
               }
