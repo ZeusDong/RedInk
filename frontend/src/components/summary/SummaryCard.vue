@@ -60,7 +60,7 @@
       <div
         v-if="hoveredRecordId"
         class="source-preview-tooltip"
-        :style="{ left: hoverPosition.x + 'px', top: hoverPosition.y + 'px' }"
+        :style="{ left: hoverPosition.x + 'px', top: hoverPosition.y + 'px', transform: 'translate(-50%, -100%)' }"
       >
         <div class="preview-content">
           <div class="preview-header">
@@ -345,6 +345,10 @@ function handleMouseLeave() {
   word-wrap: break-word;
 }
 
+.content-full {
+  pointer-events: auto;
+}
+
 /* 标题样式 */
 .content-preview :deep(h1),
 .content-full :deep(h1) {
@@ -554,6 +558,8 @@ function handleMouseLeave() {
   padding: 16px 20px;
   border-top: 1px solid #f0efed;
   background: linear-gradient(to bottom, #fafafa, #f8f7f5);
+  position: relative;
+  z-index: 10;
 }
 
 .sources-header {
@@ -588,6 +594,9 @@ function handleMouseLeave() {
   font-size: 12px;
   color: #666;
   transition: all 0.2s;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
 }
 
 .source-link:hover {
@@ -624,10 +633,11 @@ function handleMouseLeave() {
 /* === 悬停预览工具提示 === */
 .source-preview-tooltip {
   position: fixed;
-  z-index: 1000;
-  transform: translate(-50%, -100%);
-  margin-top: -8px;
+  z-index: 10000;
+  left: 0;
+  top: 0;
   pointer-events: none;
+  will-change: transform;
 }
 
 .preview-content {
