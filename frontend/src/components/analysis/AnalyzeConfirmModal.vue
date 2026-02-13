@@ -1435,8 +1435,8 @@ async function handleSaveDraft() {
       emit('save-draft', result.data)
       // Reset unsaved flag after successful save
       hasUnsavedChanges.value = false
-      // Close modal after successful save
-      emit('close')
+      // Show success message, keep modal open
+      alert('草稿保存成功！您可以继续编辑或点击「开始 AI 分析」')
     } else {
       alert(result.error || '保存失败，请重试')
     }
@@ -1449,6 +1449,16 @@ async function handleSaveDraft() {
 }
 
 async function handleSubmit() {
+  // 检查是否有未保存的内容
+  if (hasUnsavedChanges.value) {
+    confirm(
+      '⚠️ 检测到未保存的内容修改\n\n' +
+      '请先点击「保存草稿」按钮保存当前修改，然后再开始 AI 分析。'
+    )
+    // 阻止分析继续
+    return
+  }
+
   if (!validate()) {
     alert('请完善表单中的必填项，确保所有标记为红色的字段都已正确填写')
     return
