@@ -1493,7 +1493,7 @@ async function handleSubmit() {
     const success = await analysisStore.submitAnalysis(formData, (step: string) => {
       progressStep.value = step
       // 根据步骤更新提示信息
-      const stepMessages: any = { preparing: '正在准备 AI 分析...', saving: '正在保存分析结果...', done: '分析完成！', error: '分析失败', failed: '连接失败' }
+      const stepMessages: any = { preparing: '正进行 AI 分析...', saving: '正在保存分析结果...', done: '分析完成！', error: '分析失败', failed: '连接失败' }
       progressMessage.value = stepMessages[step] || step
     })
 
@@ -2105,7 +2105,7 @@ async function checkLocalImages() {
 .progress-message {
   margin-left: 8px;
   font-size: 12px;
-  color: #ffcc00;
+  color: white;
 }
 
 @keyframes spin {

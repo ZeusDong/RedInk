@@ -64,6 +64,14 @@
           <h3 class="section-title">数据统计</h3>
           <div class="stats-list">
             <div class="stat-item">
+              <span class="stat-label">总记录数</span>
+              <span class="stat-value">{{ totalAllRecords }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">已分析记录数</span>
+              <span class="stat-value">{{ analyzedRecordsCount }}</span>
+            </div>
+            <div class="stat-item">
               <span class="stat-label">待分析记录数</span>
               <span class="stat-value">{{ totalRecords }}</span>
             </div>
@@ -262,6 +270,16 @@ const baseRecords = computed(() => {
 // 总记录数（待分析笔记数量，排除已分析的）
 const totalRecords = computed(() => {
   return baseRecords.value.length
+})
+
+// 总记录数（所有记录，包括已分析和待分析）
+const totalAllRecords = computed(() => {
+  return analysisStore.pendingRecords.length + (analysisStore.completedRecords?.length || 0)
+})
+
+// 已分析记录数
+const analyzedRecordsCount = computed(() => {
+  return analysisStore.completedRecords?.length || 0
 })
 
 // 筛选后的记录
