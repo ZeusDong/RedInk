@@ -476,6 +476,8 @@ export const useAnalysisStore = defineStore('analysis', {
               })
               // 刷新待分析列表（移除已完成的笔记）
               await this.refreshPendingRecords()
+              // 刷新已完成记录列表（在分析结果标签页显示）
+              await this.loadCompletedRecords()
               if (onStep) {
                 onStep('保存完成')
               }
