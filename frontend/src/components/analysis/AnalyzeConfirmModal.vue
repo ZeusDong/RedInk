@@ -364,8 +364,38 @@
 
                 <!-- 空状态提示 -->
                 <div v-else class="empty-cards-hint">
-                  <p v-if="hasImages">👆 请先选择图片，然后点击「生成视觉描述」</p>
-                  <p v-else>请描述图片的视觉风格、配色、构图等...</p>
+                  <p v-if="hasImages">
+                    <span>👆 选择图片后点击「生成视觉描述」，或</span>
+                    <button type="button" class="manual-add-btn" @click="handleAddManualDescription">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                      </svg>
+                      手动添加描述
+                    </button>
+                  </p>
+                  <p v-else>
+                    <span>请描述图片的视觉风格、配色、构图等...</span>
+                    <button type="button" class="manual-add-btn" @click="handleAddManualDescription">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                      </svg>
+                      手动添加描述
+                    </button>
+                  </p>
+                </div>
+
+                <!-- 添加手动描述按钮（有卡片时也显示） -->
+                <div v-if="parsedImageDescriptions.length > 0" class="add-manual-desc-wrapper">
+                  <button type="button" class="add-manual-desc-btn" @click="handleAddManualDescription">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    添加描述
+                  </button>
+                  <span class="add-desc-hint">可随时手动添加或编辑描述</span>
                 </div>
 
                 <!-- 错误提示 -->
@@ -520,6 +550,76 @@
         </div>
       </div>
     </Transition>
+
+    <!-- 图片选择弹窗 -->
+    <Transition name="modal">
+      <div v-if="showImageSelector" class="modal-overlay" @click.self="closeImageSelector">
+        <div class="image-selector-modal">
+          <!-- Header -->
+          <header class="selector-header">
+            <h3 class="selector-title">选择要描述的图片</h3>
+            <button class="close-btn" @click="closeImageSelector" title="关闭">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </header>
+
+          <!-- Body -->
+          <div class="selector-body">
+            <p class="selector-hint">点击图片卡片选择要添加视觉描述的图片</p>
+
+            <!-- 图片网格 -->
+            <div class="selector-image-grid">
+              <div
+                v-for="item in availableImages"
+                :key="item.index"
+                class="selector-image-card"
+                :class="{ selected: selectedImageIndex === item.index, 'has-desc': item.hasDesc }"
+                @click="selectedImageIndex = item.index"
+              >
+                <!-- 图片缩略图 -->
+                <div class="selector-thumb-wrapper">
+                  <img
+                    v-if="item.imageSrc"
+                    :src="item.imageSrc"
+                    class="selector-thumb"
+                    :alt="item.label"
+                  />
+                  <div v-else class="selector-thumb-placeholder">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                      <polyline points="21 15 16 10 5 21"></polyline>
+                    </svg>
+                  </div>
+                  <!-- 选中标记 -->
+                  <span v-if="selectedImageIndex === item.index" class="selector-selected-badge">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"></path>
+                    </svg>
+                  </span>
+                </div>
+
+                <!-- 图片标签 -->
+                <div class="selector-label">{{ item.label }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <footer class="selector-footer">
+            <button class="btn btn-secondary" @click="closeImageSelector">
+              取消
+            </button>
+            <button class="btn btn-primary" @click="confirmImageSelection" :disabled="selectedImageIndex === null">
+              确认添加
+            </button>
+          </footer>
+        </div>
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -572,6 +672,46 @@ const generatingVisual = ref(false)
 // 进度步骤：用于显示 AI 分析的当前步骤
 const progressStep = ref<string>('')
 const progressMessage = ref<string>('')
+
+// ========== 新增：图片选择器状态 ==========
+const showImageSelector = ref(false)
+const selectedImageIndex = ref<number | null>(null)
+
+// 可用图片列表（计算属性）
+const availableImages = computed<Array<{
+  index: number
+  label: string
+  hasDesc: boolean
+  imageSrc?: string
+}>>(() => {
+  if (!props.record) return []
+
+  const result: Array<{ index: number; label: string; hasDesc: boolean; imageSrc?: string }> = []
+
+  // 封面图
+  if (props.record.cover_image) {
+    result.push({
+      index: -1,
+      label: '封面图',
+      hasDesc: imageDescriptions.value[-1] !== undefined,
+      imageSrc: props.record.cover_image
+    })
+  }
+
+  // 内容图
+  if (props.record.images && props.record.images.length > 0) {
+    for (let i = 0; i < props.record.images.length; i++) {
+      result.push({
+        index: i,
+        label: `内容图${i + 1}`,
+        hasDesc: imageDescriptions.value[i] !== undefined,
+        imageSrc: props.record.images[i]
+      })
+    }
+  }
+
+  return result
+})
 
 // 追踪是否有未保存的修改
 const hasUnsavedChanges = ref(false)
@@ -1522,6 +1662,94 @@ function clearImageDescription(idx: number) {
   delete imageDescriptions.value[idx]
 }
 
+/**
+ * Add manual description card for an image
+ */
+function handleAddManualDescription() {
+  if (!props.record) {
+    alert('没有可用的图片')
+    return
+  }
+
+  // Check if there are any images
+  const hasCover = !!props.record.cover_image
+  const hasContent = props.record.images && props.record.images.length > 0
+
+  if (!hasCover && !hasContent) {
+    alert('当前笔记没有可用图片')
+    return
+  }
+
+  // If only one image, add directly
+  if (hasCover && !hasContent) {
+    addDescriptionCard(-1, '封面图')
+    return
+  }
+  if (!hasCover && hasContent && props.record.images!.length === 1) {
+    addDescriptionCard(0, '内容图1')
+    return
+  }
+
+  // Multiple images: show selector modal
+  selectedImageIndex.value = null
+  showImageSelector.value = true
+}
+
+/**
+ * Close the image selector modal
+ */
+function closeImageSelector() {
+  showImageSelector.value = false
+  selectedImageIndex.value = null
+}
+
+/**
+ * Confirm the image selection and add description card
+ */
+function confirmImageSelection() {
+  if (selectedImageIndex.value === null) return
+
+  const selected = availableImages.value.find(img => img.index === selectedImageIndex.value)
+  if (!selected) return
+
+  addDescriptionCard(selected.index, selected.label)
+  closeImageSelector()
+}
+
+/**
+ * Create and add a new description card
+ */
+function addDescriptionCard(index: number, label: string) {
+  // Check if description already exists
+  if (imageDescriptions.value[index]) {
+    if (!confirm('该图片已有描述，是否要添加新的描述卡片？')) {
+      return
+    }
+  }
+
+  // Generate unique ID
+  const uniqueDescId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${index}`
+
+  // Store in metadata
+  imageDescriptions.value[index] = {
+    id: uniqueDescId,
+    content: ''
+  }
+
+  // Build the new description entry with proper label
+  const imageLabel = index === -1 ? '【封面图】' : `【内容图${index + 1}】`
+  const newEntry = `<!-- DESC-${uniqueDescId} -->\n${imageLabel}\n`
+
+  // Append to existing visual_description
+  if (formData.visual_description.trim()) {
+    formData.visual_description = formData.visual_description + '\n\n---\n\n' + newEntry
+  } else {
+    formData.visual_description = newEntry
+  }
+
+  console.log('[AnalyzeConfirmModal] Added manual description card:', { index, label, uniqueDescId })
+}
+
 function handleClose(skipConfirm = false) {
   // Only check for unsaved changes if not explicitly skipping confirmation
   if (!skipConfirm && hasUnsavedChanges.value) {
@@ -2383,6 +2611,70 @@ async function checkLocalImages() {
   margin: 0;
   font-size: 13px;
   color: #999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 手动添加描述按钮 */
+.manual-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: #ff2442;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.manual-add-btn:hover {
+  background: #e61e3a;
+  transform: scale(1.05);
+}
+
+/* 添加手动描述包装器（有卡片时显示） */
+.add-manual-desc-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px;
+  background: #f8f7f5;
+  border-radius: 8px;
+  margin-top: 12px;
+}
+
+.add-manual-desc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #ff2442;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.add-manual-desc-btn:hover {
+  background: #e61e3a;
+  transform: scale(1.05);
+}
+
+.add-desc-hint {
+  font-size: 12px;
+  color: #999;
+  font-style: italic;
 }
 
 /* ========== Enhanced Comments Styles ========== */
@@ -2853,6 +3145,223 @@ async function checkLocalImages() {
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+/* ========== 图片选择弹窗样式 ========== */
+.image-selector-modal {
+  background: white;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 500px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  animation: selector-appear 0.25s ease-out;
+}
+
+@keyframes selector-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.selector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e8e6e3;
+  background: linear-gradient(135deg, #ff2442 0%, #ff6b6b 100%);
+}
+
+.selector-header .selector-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: white;
+  margin: 0;
+}
+
+.selector-header .close-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.selector-header .close-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.selector-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.selector-hint {
+  font-size: 13px;
+  color: #666;
+  margin: 0 0 16px 0;
+  text-align: center;
+  font-style: italic;
+}
+
+.selector-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 12px;
+}
+
+.selector-image-card {
+  background: white;
+  border: 2px solid #e8e6e3;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.selector-image-card:hover {
+  border-color: #ff2442;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.15);
+}
+
+.selector-image-card.selected {
+  border-color: #ff2442;
+  background: #ffeee8;
+  box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.2);
+}
+
+.selector-image-card.has-desc {
+  border-color: #52c41a;
+}
+
+.selector-image-card.has-desc:hover {
+  border-color: #3aae38;
+}
+
+.selector-thumb-wrapper {
+  position: relative;
+  width: 100%;
+  padding-top: 100%;
+  background: #f5f5f5;
+}
+
+.selector-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.selector-thumb-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #bbb;
+}
+
+.selector-has-desc-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 20px;
+  height: 20px;
+  background: #52c41a;
+  border: 2px solid white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.selector-selected-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  background: #ff2442;
+  border: 2px solid white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  animation: badge-pop 0.2s ease-out;
+}
+
+@keyframes badge-pop {
+  0% {
+    transform: scale(0);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.selector-label {
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  text-align: center;
+  background: #fafafa;
+  border-top: 1px solid #e8e6e3;
+}
+
+.selector-image-card.selected .selector-label {
+  background: #ffeee8;
+  color: #ff2442;
+}
+
+.selector-footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 16px 20px;
+  border-top: 1px solid #e8e6e3;
+  background: #f8f7f5;
+}
+
+.selector-footer .btn {
+  padding: 10px 20px;
+  font-size: 14px;
+}
+
+/* Responsive for selector modal */
+@media (max-width: 480px) {
+  .selector-image-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 </style>
