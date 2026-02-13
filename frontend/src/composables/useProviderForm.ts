@@ -34,11 +34,11 @@ export interface TextProviderForm {
   name: string
   type: string
   api_key: string
-  api_key_masked: string
+  api_key_masked?: string
   base_url: string
   model: string
-  endpoint_type: string
-  _has_api_key: boolean
+  endpoint_type?: string
+  _has_api_key?: boolean
 }
 
 // 图片服务商表单类型
@@ -46,13 +46,13 @@ export interface ImageProviderForm {
   name: string
   type: string
   api_key: string
-  api_key_masked: string
+  api_key_masked?: string
   base_url: string
   model: string
-  high_concurrency: boolean
-  short_prompt: boolean
-  endpoint_type: string
-  _has_api_key: boolean
+  high_concurrency?: boolean
+  short_prompt?: boolean
+  endpoint_type?: string
+  _has_api_key?: boolean
 }
 
 // 文本服务商类型选项
