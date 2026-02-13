@@ -311,7 +311,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useReferenceStore } from '@/stores/reference'
 import { useAnalysisStore } from '@/stores/analysis'
 import ReferenceStats from '@/components/reference/ReferenceStats.vue'
@@ -333,6 +333,7 @@ import SourceSegmentedControl from '@/components/reference/SourceSegmentedContro
 const store = useReferenceStore()
 const analysisStore = useAnalysisStore()
 const router = useRouter()
+const route = useRoute()
 const showDetailModal = ref(false)
 const showAdvancedFilter = ref(false)
 const jumpPage = ref(1)
@@ -460,6 +461,13 @@ onMounted(async () => {
 
   // Fetch current mode records for display
   await store.fetchRecords()
+
+  // 检查 URL 查询参数中是否有 record 参数，如果有则自动显示详情
+  const recordIdFromQuery = route.query.record as string | undefined
+  if (recordIdFromQuery) {
+    console.log('[ReferenceView] Found record in query params:', recordIdFromQuery)
+    await handleShowDetail(recordIdFromQuery)
+  }
 
   console.log('[ReferenceView] Initialization complete.')
 })

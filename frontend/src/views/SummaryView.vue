@@ -82,6 +82,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useSummaryStore } from '@/stores/summary'
+import { useAnalysisStore } from '@/stores/analysis'
 import SummaryCard from '@/components/summary/SummaryCard.vue'
 
 /**
@@ -91,6 +92,7 @@ import SummaryCard from '@/components/summary/SummaryCard.vue'
  */
 
 const summaryStore = useSummaryStore()
+const analysisStore = useAnalysisStore()
 
 // 分页状态
 const currentPage = ref(1)
@@ -158,6 +160,9 @@ function handleNextPage() {
 // 初始化加载
 onMounted(async () => {
   await summaryStore.initialize()
+  // 加载分析记录，以便 SummaryCard 能显示源笔记链接
+  await analysisStore.loadCompletedRecords()
+  await analysisStore.loadSummarizedRecords()
 })
 </script>
 

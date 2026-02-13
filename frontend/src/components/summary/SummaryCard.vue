@@ -27,6 +27,55 @@
       <div v-else class="content-full markdown-body" v-html="fullHtml"></div>
     </div>
 
+    <!-- 源笔记链接 -->
+    <div v-if="sourceRecords.length > 0" class="card-sources">
+      <div class="sources-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path>
+          <rect x="9" y="3" width="6" height="4" rx="1"></rect>
+          <path d="M9 14l2 2 4-4"></path>
+        </svg>
+        源笔记（{{ sourceRecords.length }}篇）
+      </div>
+      <div class="sources-list">
+        <a
+          v-for="(record, index) in sourceRecords"
+          :key="record.record_id"
+          :href="getReferenceUrl(record.record_id)"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="source-link"
+          @mouseenter="handleMouseEnter($event, record.record_id)"
+          @mouseleave="handleMouseLeave"
+        >
+          <span class="source-index">{{ index + 1 }}</span>
+          <span class="source-title">{{ getRecordTitle(record) }}</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+          </svg>
+        </a>
+      </div>
+      <!-- 悬停预览 -->
+      <div
+        v-if="hoveredRecordId"
+        class="source-preview-tooltip"
+        :style="{ left: hoverPosition.x + 'px', top: hoverPosition.y + 'px' }"
+      >
+        <div class="preview-content">
+          <div class="preview-header">
+            <strong>{{ getRecordTitle(sourceRecords.find(r => r.record_id === hoveredRecordId)!) }}</strong>
+          </div>
+          <div class="preview-body">
+            {{ getRecordPreview(sourceRecords.find(r => r.record_id === hoveredRecordId)!) }}
+          </div>
+          <div class="preview-footer">
+            点击查看完整内容
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 卡片底部 -->
     <div class="card-footer">
       <button @click="toggleExpanded" class="expand-btn">
@@ -41,6 +90,8 @@ import { ref, computed } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { Summary } from '@/api/summary'
+import { useAnalysisStore } from '@/stores/analysis'
+import type { ReferenceRecord } from '@/api'
 
 /**
  * AI总结卡片组件
@@ -56,6 +107,11 @@ const emit = defineEmits<{
 }>()
 
 const expanded = ref(false)
+const analysisStore = useAnalysisStore()
+
+// 鼠标悬停状态
+const hoveredRecordId = ref<string | null>(null)
+const hoverPosition = ref({ x: 0, y: 0 })
 
 // 配置 marked 选项
 marked.setOptions({
@@ -116,6 +172,53 @@ function formatDate(dateString: string): string {
 
 function toggleExpanded() {
   expanded.value = !expanded.value
+}
+
+// 生成对标文案页面链接（用于新标签页打开）
+function getReferenceUrl(recordId: string): string {
+  return `/reference?record=${recordId}`
+}
+
+// 获取源笔记数据（从已完成记录中查找）
+const sourceRecords = computed(() => {
+  const records: ReferenceRecord[] = []
+  for (const recordId of props.summary.record_ids) {
+    // 从已完成记录和已总结记录中查找
+    const record = [
+      ...analysisStore.completedRecords,
+      ...analysisStore.summarizedRecords
+    ].find(r => r.record_id === recordId)
+    if (record) {
+      records.push(record)
+    }
+  }
+  return records
+})
+
+// 获取笔记标题
+function getRecordTitle(record: ReferenceRecord): string {
+  return record.title || '无标题'
+}
+
+// 获取笔记预览内容（前100字）
+function getRecordPreview(record: ReferenceRecord): string {
+  if (!record.body) return '暂无内容'
+  return record.body.slice(0, 100) + (record.body.length > 100 ? '...' : '')
+}
+
+// 鼠标悬停显示预览
+function handleMouseEnter(event: MouseEvent, recordId: string) {
+  const target = event.currentTarget as HTMLElement
+  const rect = target.getBoundingClientRect()
+  hoveredRecordId.value = recordId
+  hoverPosition.value = {
+    x: rect.left + rect.width / 2,
+    y: rect.top
+  }
+}
+
+function handleMouseLeave() {
+  hoveredRecordId.value = null
 }
 </script>
 
@@ -444,5 +547,135 @@ function toggleExpanded() {
   border-radius: 8px;
   margin: 10px 0;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* === 源笔记链接区域 === */
+.card-sources {
+  padding: 16px 20px;
+  border-top: 1px solid #f0efed;
+  background: linear-gradient(to bottom, #fafafa, #f8f7f5);
+}
+
+.sources-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 12px;
+}
+
+.sources-header svg {
+  color: var(--primary, #ff2442);
+}
+
+.sources-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: white;
+  border: 1px solid #e8e6e3;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 12px;
+  color: #666;
+  transition: all 0.2s;
+}
+
+.source-link:hover {
+  border-color: var(--primary, #ff2442);
+  color: var(--primary, #ff2442);
+  background: #fff5f5;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(255, 36, 66, 0.1);
+}
+
+.source-link svg {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.source-link:hover svg {
+  opacity: 1;
+}
+
+.source-index {
+  font-weight: 600;
+  color: var(--primary, #ff2442);
+}
+
+.source-title {
+  font-size: 12px;
+  color: #333;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* === 悬停预览工具提示 === */
+.source-preview-tooltip {
+  position: fixed;
+  z-index: 1000;
+  transform: translate(-50%, -100%);
+  margin-top: -8px;
+  pointer-events: none;
+}
+
+.preview-content {
+  background: white;
+  border: 1px solid #e8e6e3;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  width: 320px;
+  max-width: 90vw;
+  overflow: hidden;
+  position: relative;
+}
+
+.preview-content::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 12px;
+  background: white;
+  border-right: 1px solid #e8e6e3;
+  border-bottom: 1px solid #e8e6e3;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.preview-header {
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid #f0efed;
+  font-size: 13px;
+  color: var(--primary, #ff2442);
+}
+
+.preview-body {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.6;
+  max-height: 120px;
+  overflow: hidden;
+}
+
+.preview-footer {
+  padding: 8px 14px 10px;
+  border-top: 1px solid #f0efed;
+  font-size: 11px;
+  color: #999;
+  text-align: center;
 }
 </style>
