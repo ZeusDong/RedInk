@@ -37,28 +37,30 @@
 
     <!-- 点击选择卡片 -->
     <div class="card-content" @click="$emit('select', record.record_id)">
-      <img
-        v-if="record.cover_image"
-        :src="record.cover_image"
-        alt="cover"
-        loading="lazy"
-        decoding="async"
-      />
-      <div v-else class="cover-placeholder">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-          <circle cx="8.5" cy="8.5" r="1.5"></circle>
-          <polyline points="21 15 16 10 5 21"></polyline>
-        </svg>
-      </div>
+      <div class="card-cover">
+        <img
+          v-if="record.cover_image"
+          :src="record.cover_image"
+          alt="cover"
+          loading="lazy"
+          decoding="async"
+        />
+        <div v-else class="cover-placeholder">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+        </div>
 
-      <!-- 已分析标记 -->
-      <div class="analyzed-badge">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-          <polyline points="22 4 12 14.01 9 11.01"></polyline>
-        </svg>
-        已分析
+        <!-- 已分析标记 -->
+        <div class="analyzed-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          已分析
+        </div>
       </div>
     </div>
 
@@ -349,8 +351,6 @@ function formatMetric(count: number): string {
 }
 
 .card-content {
-  width: 100%;
-  height: 100%;
   display: flex;
   flex-direction: column;
 }
