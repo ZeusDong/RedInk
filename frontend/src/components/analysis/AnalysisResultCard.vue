@@ -53,8 +53,17 @@
           </svg>
         </div>
 
+        <!-- 已总结标记 -->
+        <div v-if="isSummarized" class="summarized-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            <path d="M12 9v3m0 0v5m-3-3h6"></path>
+          </svg>
+          已总结
+        </div>
+
         <!-- 已分析标记 -->
-        <div class="analyzed-badge">
+        <div v-else class="analyzed-badge">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
             <polyline points="22 4 12 14.01 9 11.01"></polyline>
@@ -133,6 +142,7 @@ import type { ReferenceRecord } from '@/api'
 const props = defineProps<{
   record: ReferenceRecord
   isSelected: boolean
+  isSummarized?: boolean
   batchSelectionEnabled?: boolean
   isBatchSelected?: boolean
 }>()
@@ -207,6 +217,28 @@ function formatMetric(count: number): string {
   justify-content: center;
   color: #e0e0e0;
   background: #fafafa;
+}
+
+/* 已总结标记 */
+.summarized-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.95) 0%, rgba(168, 85, 247, 0.95) 100%);
+  backdrop-filter: blur(4px);
+  border-radius: 6px;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+}
+
+.summarized-badge svg {
+  flex-shrink: 0;
 }
 
 /* 已分析标记 */

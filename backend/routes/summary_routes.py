@@ -147,11 +147,14 @@ def create_summary_blueprint():
         """
         logger.info("[SUMMARY_ROUTES] POST /api/summary/generate - Starting summary generation")
 
-        # Extract request data HERE (outside generator) while request context is available
-        data = request.get_json()
+        # 强制立即读取请求数据（必须在任何 yield 之前）
+        # 注意：使用 force=True 绕过 Flask 的延迟执行，直接在请求上下文有效时读取
+        data = request.get_json(force=True)
         if not data:
-            yield f"event: error\ndata: {json.dumps({'error': '缺少请求体'}, ensure_ascii=False)}\n\n"
-            return
+            return Response(
+                f"event: error\ndata: {json.dumps({'error': '缺少请求体'}, ensure_ascii=False)}\n\n",
+                mimetype='text/event-stream'
+            )
 
         record_ids = data.get('record_ids', [])
         industry = data.get('industry', '')

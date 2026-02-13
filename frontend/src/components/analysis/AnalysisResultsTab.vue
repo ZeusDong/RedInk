@@ -109,6 +109,7 @@
           :key="record.record_id"
           :record="record"
           :is-selected="analysisStore.selectedRecord?.record_id === record.record_id"
+          :is-summarized="analysisStore.summarizedRecords.some(r => r.record_id === record.record_id)"
           :batch-selection-enabled="analysisStore.batchSelectionEnabled"
           :is-batch-selected="analysisStore.isRecordSelected(record.record_id)"
           @select="handleSelect"
@@ -145,6 +146,9 @@
       v-if="showGenerateModal"
       :show="showGenerateModal"
       :records-by-industry="recordsByIndustry"
+      :generating="isGeneratingSummary"
+      :progress-message="generateProgress?.message"
+      :current-industry="currentGeneratingIndustry"
       @close="onModalClose"
       @generate="onModalGenerate"
     />
@@ -193,10 +197,12 @@ const loading = ref(false)
 const showGenerateModal = ref(false)
 const selectedForSummary = ref<typeof analyzedRecords.value>([])
 const generateProgress = ref<{ step: string; message: string } | null>(null)
+const isGeneratingSummary = ref(false)
+const currentGeneratingIndustry = ref<string | undefined>(undefined)
 
-// 获取已分析的记录 - 使用 completedRecords（status=completed 的记录）
+// 获取已分析的记录 - 合并 completed 和 summarized 记录
 const analyzedRecords = computed(() => {
-  return analysisStore.completedRecords
+  return [...analysisStore.completedRecords, ...analysisStore.summarizedRecords]
 })
 
 // 筛选后的记录
@@ -350,32 +356,47 @@ async function generateSummary() {
 function onModalClose() {
   showGenerateModal.value = false
   generateProgress.value = null
+  // 重置生成状态
+  isGeneratingSummary.value = false
+  currentGeneratingIndustry.value = undefined
 }
 
 async function onModalGenerate(industries: string[]) {
-  // 为每个行业生成总结
-  for (const industry of industries) {
-    const industryRecords = selectedForSummary.value.filter(r => r.industry === industry)
-    const industryRecordIds = industryRecords.map(r => r.record_id)
+  // 设置生成状态
+  isGeneratingSummary.value = true
 
-    const success = await summaryStore.generateSummary(
-      industry,
-      industryRecordIds,
-      (progress: SummaryProgress) => {
-        generateProgress.value = progress
+  try {
+    // 为每个行业生成总结
+    for (const industry of industries) {
+      currentGeneratingIndustry.value = industry
+
+      const industryRecords = selectedForSummary.value.filter(r => r.industry === industry)
+      const industryRecordIds = industryRecords.map(r => r.record_id)
+
+      const success = await summaryStore.generateSummary(
+        industry,
+        industryRecordIds,
+        (progress: SummaryProgress) => {
+          generateProgress.value = progress
+        }
+      )
+
+      if (!success) {
+        console.error(`Failed to generate summary for ${industry}`)
       }
-    )
-
-    if (!success) {
-      console.error(`Failed to generate summary for ${industry}`)
     }
-  }
 
-  // 生成完成后
-  onModalClose()
-  analysisStore.disableBatchSelection()
-  // 刷新已完成记录列表
-  emit('refresh-completed')
+    // 所有行业生成完成后
+    onModalClose()
+    analysisStore.disableBatchSelection()
+    // 刷新已完成记录列表
+    emit('refresh-completed')
+  } finally {
+    // 重置生成状态
+    isGeneratingSummary.value = false
+    currentGeneratingIndustry.value = undefined
+    generateProgress.value = null
+  }
 }
 
 // 清除单个筛选条件

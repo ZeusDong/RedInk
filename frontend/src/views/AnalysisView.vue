@@ -208,6 +208,7 @@
           :sort-by="sortBy"
           :sort-order="sortOrder"
           :page-size="pageSize"
+          @refresh-completed="handleRefreshCompleted"
         />
       </main>
     </div>
@@ -274,12 +275,12 @@ const totalRecords = computed(() => {
 
 // 总记录数（所有记录，包括已分析和待分析）
 const totalAllRecords = computed(() => {
-  return analysisStore.pendingRecords.length + (analysisStore.completedRecords?.length || 0)
+  return analysisStore.pendingRecords.length + (analysisStore.completedRecords?.length || 0) + (analysisStore.summarizedRecords?.length || 0)
 })
 
-// 已分析记录数
+// 已分析记录数（包含已总结的记录）
 const analyzedRecordsCount = computed(() => {
-  return analysisStore.completedRecords?.length || 0
+  return (analysisStore.completedRecords?.length || 0) + (analysisStore.summarizedRecords?.length || 0)
 })
 
 // 筛选后的记录
@@ -362,6 +363,9 @@ onMounted(async () => {
     // 加载已完成分析的记录（status=completed）
     await analysisStore.loadCompletedRecords()
 
+    // 加载已总结的记录（status=summarized）
+    await analysisStore.loadSummarizedRecords()
+
     // 加载所有分析结果（用于获取分析内容）
     await analysisStore.loadAllAnalysisResults()
 
@@ -381,6 +385,12 @@ onMounted(async () => {
 // 搜索
 function handleSearch() {
   currentPage.value = 1
+}
+
+// 刷新已完成/已总结记录列表
+async function handleRefreshCompleted() {
+  await analysisStore.loadCompletedRecords()
+  await analysisStore.loadSummarizedRecords()
 }
 
 // 切换标签页

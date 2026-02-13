@@ -39,6 +39,9 @@ export interface AnalysisState {
   // 已完成分析的笔记列表
   completedRecords: ReferenceRecord[]
 
+  // 已总结的笔记列表
+  summarizedRecords: ReferenceRecord[]
+
   // 当前选中的记录（用于分析）
   selectedRecord: ReferenceRecord | null
 
@@ -93,6 +96,7 @@ export const useAnalysisStore = defineStore('analysis', {
     dataSourceMode: 'selected',
     pendingRecords: [],
     completedRecords: [],
+    summarizedRecords: [],
     selectedRecord: null,
     analysisResults: new Map(),
     sidebarExpanded: false,
@@ -180,6 +184,23 @@ export const useAnalysisStore = defineStore('analysis', {
         }
       } catch (e) {
         console.error('[AnalysisStore] Failed to load completed records:', e)
+      }
+    },
+
+    /**
+     * 加载已总结的笔记列表
+     */
+    async loadSummarizedRecords() {
+      try {
+        // 获取 status=summarized 的记录
+        const response = await fetch('/api/analysis/pending?status=summarized')
+        const data = await response.json()
+
+        if (data.success) {
+          this.summarizedRecords = data.data || []
+        }
+      } catch (e) {
+        console.error('[AnalysisStore] Failed to load summarized records:', e)
       }
     },
 
