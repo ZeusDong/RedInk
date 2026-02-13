@@ -1,5 +1,22 @@
 <template>
   <Teleport to="body">
+    <!-- Toast 通知 -->
+    <Transition name="toast">
+      <div v-if="toast.show" :class="['toast-notification', `toast-${toast.type}`]">
+        <div class="toast-icon">
+          <svg v-if="toast.type === 'success'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <svg v-else-if="toast.type === 'error'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+          </svg>
+        </div>
+        <span class="toast-message">{{ toast.message }}</span>
+      </div>
+    </Transition>
+
     <Transition name="modal">
       <div v-if="visible" class="modal-overlay" @click.self="handleClose(false)">
         <div class="confirm-modal">
@@ -672,6 +689,24 @@ const generatingVisual = ref(false)
 // 进度步骤：用于显示 AI 分析的当前步骤
 const progressStep = ref<string>('')
 const progressMessage = ref<string>('')
+
+// Toast 通知状态
+const toast = reactive({
+  show: false,
+  message: '',
+  type: 'success' as 'success' | 'error'
+})
+
+// 显示 Toast 通知
+function showToast(message: string, type: 'success' | 'error' = 'success') {
+  toast.message = message
+  toast.type = type
+  toast.show = true
+  // 3秒后自动消失
+  setTimeout(() => {
+    toast.show = false
+  }, 3000)
+}
 
 // ========== 新增：图片选择器状态 ==========
 const showImageSelector = ref(false)
@@ -1435,14 +1470,14 @@ async function handleSaveDraft() {
       emit('save-draft', result.data)
       // Reset unsaved flag after successful save
       hasUnsavedChanges.value = false
-      // Show success message, keep modal open
-      alert('草稿保存成功！您可以继续编辑或点击「开始 AI 分析」')
+      // Show success toast, keep modal open
+      showToast('草稿保存成功！您可以继续编辑或点击「开始 AI 分析」')
     } else {
-      alert(result.error || '保存失败，请重试')
+      showToast(result.error || '保存失败，请重试', 'error')
     }
   } catch (e) {
     console.error('[AnalyzeConfirmModal] Failed to save draft:', e)
-    alert('保存失败，请检查网络连接')
+    showToast('保存失败，请检查网络连接', 'error')
   } finally {
     saving.value = false
   }
@@ -1859,6 +1894,65 @@ async function checkLocalImages() {
 </script>
 
 <style scoped>
+/* Toast 通知 */
+.toast-notification {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 2000;
+  min-width: 280px;
+  max-width: 420px;
+}
+
+.toast-success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.toast-error {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+}
+
+.toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.toast-message {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Toast 动画 */
+.toast-enter-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toast-leave-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.toast-enter-from {
+  opacity: 0;
+  transform: translate(-50%, -16px);
+}
+
+.toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -8px);
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;
