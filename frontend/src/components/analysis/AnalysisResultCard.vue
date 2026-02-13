@@ -61,6 +61,11 @@
           </svg>
           已分析
         </div>
+
+        <!-- 批量选中标记 -->
+        <div v-if="batchSelectionEnabled && isBatchSelected" class="batch-selected-badge">
+          ✅ 已选中
+        </div>
       </div>
     </div>
 
@@ -118,7 +123,6 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { ReferenceRecord } from '@/api'
 
 /**
@@ -130,14 +134,13 @@ const props = defineProps<{
   record: ReferenceRecord
   isSelected: boolean
   batchSelectionEnabled?: boolean
+  isBatchSelected?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'toggle-select', id: string): void
 }>()
-
-const isBatchSelected = computed(() => props.isSelected)
 
 
 /**
@@ -210,7 +213,7 @@ function formatMetric(count: number): string {
 .analyzed-badge {
   position: absolute;
   top: 10px;
-  left: 10px;
+  right: 10px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -226,6 +229,36 @@ function formatMetric(count: number): string {
 
 .analyzed-badge svg {
   flex-shrink: 0;
+}
+
+/* 批量选中标记 */
+.batch-selected-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--primary, #ff2442);
+  backdrop-filter: blur(4px);
+  border-radius: 6px;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(255, 36, 66, 0.3);
+  animation: badgePop 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes badgePop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* 底部区域 */

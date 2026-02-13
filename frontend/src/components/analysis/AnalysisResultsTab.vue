@@ -13,23 +13,55 @@
 
     <!-- 批量选择模式工具栏 -->
     <div v-if="analysisStore.batchSelectionEnabled" class="batch-toolbar">
-      <div class="batch-info">
-        已选 <strong>{{ analysisStore.selectedCount }}</strong> 条
+      <div class="batch-left">
+        <div class="batch-info">
+          已选 <strong>{{ analysisStore.selectedCount }}</strong> 条
+        </div>
+        <div class="batch-selection-actions">
+          <button
+            @click="selectAll"
+            :disabled="filteredRecords.length === 0"
+            :class="{ disabled: filteredRecords.length === 0 }"
+            class="batch-select-btn"
+            title="全选当前列表"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 11l3 3L22 4" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+            全选
+          </button>
+          <button
+            @click="deselectAll"
+            :disabled="analysisStore.selectedCount === 0"
+            :class="{ disabled: analysisStore.selectedCount === 0 }"
+            class="batch-select-btn"
+            title="取消全选"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <path d="M9 9l6 6m0-6l-6 6" />
+            </svg>
+            取消全选
+          </button>
+        </div>
       </div>
-      <button @click="cancelBatchSelection" class="batch-cancel-btn">
-        取消
-      </button>
-      <button
-        v-if="analysisStore.selectedCount > 0"
-        @click="generateSummary"
-        class="batch-generate-btn"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          <path d="M12 9v3m0 0v5m-3-3h6" />
-        </svg>
-        生成AI总结
-      </button>
+      <div class="batch-right">
+        <button @click="cancelBatchSelection" class="batch-cancel-btn">
+          取消
+        </button>
+        <button
+          v-if="analysisStore.selectedCount > 0"
+          @click="generateSummary"
+          class="batch-generate-btn"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            <path d="M12 9v3m0 0v5m-3-3h6" />
+          </svg>
+          生成AI总结
+        </button>
+      </div>
     </div>
 
     <!-- 筛选标签 -->
@@ -280,6 +312,16 @@ function cancelBatchSelection() {
 
 function handleToggleSelect(recordId: string) {
   analysisStore.toggleRecordSelection(recordId)
+}
+
+// 全选当前列表
+function selectAll() {
+  analysisStore.selectAll(filteredRecords.value)
+}
+
+// 取消全选
+function deselectAll() {
+  analysisStore.clearBatchSelection()
 }
 
 async function generateSummary() {
@@ -601,16 +643,64 @@ onMounted(async () => {
   background: linear-gradient(135deg, rgba(255, 36, 66, 0.1) 0%, rgba(255, 107, 107, 0.1) 100%);
   border-radius: 10px;
   margin-bottom: 16px;
+  gap: 16px;
+}
+
+.batch-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .batch-info {
   font-size: 14px;
   color: var(--text-main, #1a1a1a);
+  white-space: nowrap;
 }
 
 .batch-info strong {
   color: var(--primary, #ff2442);
   font-weight: 600;
+}
+
+.batch-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-select-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #e0dedb;
+  border-radius: 6px;
+  background: white;
+  color: #666;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.batch-select-btn:hover:not(.disabled) {
+  border-color: var(--primary, #ff2442);
+  color: var(--primary, #ff2442);
+}
+
+.batch-select-btn.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.batch-select-btn svg {
+  flex-shrink: 0;
+}
+
+.batch-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .batch-cancel-btn {

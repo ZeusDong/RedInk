@@ -176,7 +176,7 @@ function handleReanalyze() {
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
-  z-index: 50;
+  z-index: 101;
 }
 
 /* 滑入动画 */
