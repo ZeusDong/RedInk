@@ -59,6 +59,12 @@ export interface AnalysisState {
 
   // 正在分析中的记录ID集合（防止重复提交）
   analyzingRecordIds: Set<string>
+
+  // 批量选择模式是否启用
+  batchSelectionEnabled: boolean
+
+  // 批量选中的记录ID集合
+  selectedRecordIds: Set<string>
 }
 
 /**
@@ -93,7 +99,9 @@ export const useAnalysisStore = defineStore('analysis', {
     loading: false,
     initialized: false,
     draftCache: new Map(),
-    analyzingRecordIds: new Set()
+    analyzingRecordIds: new Set(),
+    batchSelectionEnabled: false,
+    selectedRecordIds: new Set()
   }),
 
   getters: {
@@ -129,6 +137,11 @@ export const useAnalysisStore = defineStore('analysis', {
     hasAnalysisResult: (state) => (recordId: string): boolean => {
       const result = state.analysisResults.get(recordId)
       return result?.analyzed ?? false
+    },
+
+    // 批量选择数量
+    selectedCount(state): number {
+      return state.selectedRecordIds.size
     }
   },
 
@@ -342,8 +355,15 @@ export const useAnalysisStore = defineStore('analysis', {
         const data = await response.json()
 
         if (data.success && data.data) {
-          // data.data is an array of analysis results
-          for (const result of data.data) {
+          // data.data is an object with record_id as keys
+          // Use Object.values() to get the array of results
+          const results = Object.values(data.data) as Array<{
+            record_id: string
+            analyzed: boolean
+            content?: string
+            created_at: string
+          }>
+          for (const result of results) {
             this.setAnalysisResult(result.record_id, {
               record_id: result.record_id,
               analyzed: result.analyzed,
@@ -551,6 +571,98 @@ export const useAnalysisStore = defineStore('analysis', {
         console.error('[AnalysisStore] Failed to generate visual description:', e)
         return null
       }
+    },
+
+    // ==================== Batch Selection ====================
+
+    /**
+     * 切换批量选择模式
+     */
+    toggleBatchSelection() {
+      this.batchSelectionEnabled = !this.batchSelectionEnabled
+      // 退出批量模式时清空选择
+      if (!this.batchSelectionEnabled) {
+        this.selectedRecordIds.clear()
+      }
+    },
+
+    /**
+     * 启用批量选择模式
+     */
+    enableBatchSelection() {
+      this.batchSelectionEnabled = true
+    },
+
+    /**
+     * 禁用批量选择模式
+     */
+    disableBatchSelection() {
+      this.batchSelectionEnabled = false
+      this.selectedRecordIds.clear()
+    },
+
+    /**
+     * 切换单个记录的选择状态
+     */
+    toggleRecordSelection(recordId: string) {
+      if (this.selectedRecordIds.has(recordId)) {
+        this.selectedRecordIds.delete(recordId)
+      } else {
+        this.selectedRecordIds.add(recordId)
+      }
+    },
+
+    /**
+     * 选择记录（批量模式）
+     */
+    selectRecordForBatch(recordId: string) {
+      this.selectedRecordIds.add(recordId)
+    },
+
+    /**
+     * 取消选择记录（批量模式）
+     */
+    deselectRecordForBatch(recordId: string) {
+      this.selectedRecordIds.delete(recordId)
+    },
+
+    /**
+     * 清空批量选择
+     */
+    clearBatchSelection() {
+      this.selectedRecordIds.clear()
+    },
+
+    /**
+     * 全选当前列表
+     */
+    selectAll(records: ReferenceRecord[]) {
+      this.selectedRecordIds.clear()
+      for (const record of records) {
+        this.selectedRecordIds.add(record.record_id)
+      }
+    },
+
+    /**
+     * 检查记录是否被选中
+     */
+    isRecordSelected(recordId: string): boolean {
+      return this.selectedRecordIds.has(recordId)
+    },
+
+    /**
+     * 按行业分组选择
+     */
+    getRecordsByIndustry(): Map<string, ReferenceRecord[]> {
+      const grouped = new Map<string, ReferenceRecord[]>()
+      for (const record of this.completedRecords) {
+        const industry = record.industry || '未分类'
+        if (!grouped.has(industry)) {
+          grouped.set(industry, [])
+        }
+        grouped.get(industry)!.push(record)
+      }
+      return grouped
     }
   }
 })

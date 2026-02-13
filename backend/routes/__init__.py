@@ -11,6 +11,7 @@ API 路由模块
 - reference_test_routes: 测试接口相关 API
 - oauth_routes: OAuth 授权相关 API
 - analysis_routes: 对标分析相关 API
+- summary_routes: AI 总结相关 API
 
 所有路由都注册到统一的 /api 前缀下
 """
@@ -41,6 +42,7 @@ def create_api_blueprint():
     from .reference_test_routes import create_reference_test_blueprint
     from .oauth_routes import create_oauth_blueprint
     from .image_proxy_routes import create_image_proxy_blueprint
+    from .summary_routes import create_summary_blueprint
 
     # 显式捕获 analysis_routes 导入错误
     try:
@@ -72,6 +74,8 @@ def create_api_blueprint():
     logger.debug("   ✅ oauth_routes registered")
     api_bp.register_blueprint(create_image_proxy_blueprint())
     logger.debug("   ✅ image_proxy_routes registered")
+    api_bp.register_blueprint(create_summary_blueprint())
+    logger.debug("   ✅ summary_routes registered")
 
     # 显式捕获 analysis_routes 蓝图创建错误
     try:

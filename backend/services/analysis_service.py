@@ -102,6 +102,19 @@ class AnalysisService:
             )
         ''')
 
+        # 创建AI总结表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS analysis_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                industry TEXT NOT NULL,
+                record_ids TEXT NOT NULL,
+                content TEXT NOT NULL,
+                record_count INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # 创建索引
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_pending_notes_record_id
@@ -116,6 +129,11 @@ class AnalysisService:
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_analysis_drafts_record_id
             ON analysis_drafts(record_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_analysis_summaries_industry
+            ON analysis_summaries(industry)
         ''')
 
         # 数据库迁移：为现有的 pending_notes 表添加 status 列（如果不存在）
@@ -877,6 +895,59 @@ class AnalysisService:
                 line += f" ({likes} 赞)"
             formatted.append(line)
         return "\n".join(formatted)
+
+    # ==================== Batch Status Update ====================
+
+    def batch_update_status(self, record_ids: List[str], status: str) -> int:
+        """
+        批量更新笔记状态
+
+        Args:
+            record_ids: 笔记 ID 列表
+            status: 新状态 ('pending', 'completed', 'failed', 'summarized')
+
+        Returns:
+            int: 实际更新的数量
+        """
+        if not record_ids:
+            return 0
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # 使用 executemany 批量更新
+            cursor.executemany('''
+                UPDATE pending_notes
+                SET status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE record_id = ?
+            ''', [(status, record_id) for record_id in record_ids])
+            conn.commit()
+            return cursor.rowcount
+        except sqlite3.Error as e:
+            logger.error(f"[ANALYSIS_SERVICE] Error batch updating status: {e}", exc_info=True)
+            return 0
+
+    def get_records_by_status(self, status: str) -> List[Dict[str, Any]]:
+        """
+        获取指定状态的所有笔记
+
+        Args:
+            status: 状态值 ('pending', 'completed', 'failed', 'summarized')
+
+        Returns:
+            List[Dict]: 笔记列表
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('SELECT data FROM pending_notes WHERE status = ? ORDER BY created_at DESC', (status,))
+            rows = cursor.fetchall()
+            return [json.loads(row['data']) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"[ANALYSIS_SERVICE] Error getting records by status: {e}", exc_info=True)
+            return []
 
 
 # 全局单例

@@ -2,11 +2,41 @@
   <!-- 分析结果卡片 -->
   <div
     class="analysis-result-card"
-    :class="{ selected: isSelected }"
-    @click="$emit('select', record.record_id)"
+    :class="{ selected: isSelected, 'batch-mode': batchSelectionEnabled }"
   >
-    <!-- 封面区域 -->
-    <div class="card-cover">
+    <!-- 批量选择复选框 -->
+    <div
+      v-if="batchSelectionEnabled"
+      class="batch-checkbox"
+      @click.stop="$emit('toggle-select', record.record_id)"
+    >
+      <svg
+        v-if="isBatchSelected"
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <path d="M9 12l2 2 4-4" />
+      </svg>
+      <svg
+        v-else
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+      </svg>
+    </div>
+
+    <!-- 点击选择卡片 -->
+    <div class="card-content" @click="$emit('select', record.record_id)">
       <img
         v-if="record.cover_image"
         :src="record.cover_image"
@@ -86,6 +116,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { ReferenceRecord } from '@/api'
 
 /**
@@ -96,11 +127,16 @@ import type { ReferenceRecord } from '@/api'
 const props = defineProps<{
   record: ReferenceRecord
   isSelected: boolean
+  batchSelectionEnabled?: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'select', id: string): void
+  (e: 'toggle-select', id: string): void
 }>()
+
+const isBatchSelected = computed(() => props.isSelected)
+
 
 /**
  * 格式化互动数据
@@ -280,5 +316,46 @@ function formatMetric(count: number): string {
   background: #f0f0f0;
   font-size: 11px;
   color: var(--text-placeholder, #999);
+}
+
+/* 批量选择模式 */
+.analysis-result-card.batch-mode {
+  cursor: default;
+}
+
+.batch-checkbox {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.2s;
+}
+
+.batch-checkbox:hover {
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.batch-checkbox svg {
+  color: var(--primary, #ff2442);
+}
+
+.card-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.batch-mode .card-content {
+  cursor: pointer;
 }
 </style>

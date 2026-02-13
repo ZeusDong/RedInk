@@ -419,4 +419,53 @@ def create_analysis_blueprint():
             'X-Accel-Buffering': 'no'
         })
 
+    # ==================== Batch Status Update ====================
+
+    @analysis_bp.route('/batch-status', methods=['PATCH'])
+    def batch_update_status():
+        """
+        批量更新笔记状态
+
+        PATCH /api/analysis/batch-status
+        Body: {
+            "record_ids": ["record_id_1", "record_id_2", ...],
+            "status": "summarized"
+        }
+        """
+        logger.info("[ANALYSIS_ROUTES] PATCH /api/analysis/batch-status - Batch updating status")
+        try:
+            data = request.get_json()
+
+            if not data or 'record_ids' not in data:
+                logger.warning("[ANALYSIS_ROUTES] Missing 'record_ids' parameter in request")
+                return jsonify({'success': False, 'error': '缺少 record_ids 参数'}), 400
+
+            if 'status' not in data:
+                logger.warning("[ANALYSIS_ROUTES] Missing 'status' parameter in request")
+                return jsonify({'success': False, 'error': '缺少 status 参数'}), 400
+
+            service = get_analysis_service()
+            record_ids = data['record_ids']
+            status = data['status']
+
+            # 验证状态值
+            valid_statuses = ['pending', 'completed', 'failed', 'summarized']
+            if status not in valid_statuses:
+                logger.warning(f"[ANALYSIS_ROUTES] Invalid status: {status}")
+                return jsonify({'success': False, 'error': f'无效的状态值，有效值为: {", ".join(valid_statuses)}'}), 400
+
+            logger.info(f"[ANALYSIS_ROUTES] Batch updating {len(record_ids)} records to status={status}")
+
+            count = service.batch_update_status(record_ids, status)
+
+            logger.info(f"[ANALYSIS_ROUTES] Successfully updated {count} records to status={status}")
+            return jsonify({
+                'success': True,
+                'updated': count,
+                'message': f'成功更新 {count} 条笔记状态'
+            })
+        except Exception as e:
+            logger.error(f"[ANALYSIS_ROUTES] Error in batch_update_status: {e}", exc_info=True)
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     return analysis_bp

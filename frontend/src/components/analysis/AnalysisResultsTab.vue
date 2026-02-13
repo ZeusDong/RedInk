@@ -1,5 +1,37 @@
 <template>
   <div class="analysis-results-tab">
+    <!-- 批量选择按钮 -->
+    <div v-if="!analysisStore.batchSelectionEnabled" class="batch-actions">
+      <button @click="enableBatchSelection" class="batch-enable-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M9 12l2 2 4-4" />
+        </svg>
+        批量选择
+      </button>
+    </div>
+
+    <!-- 批量选择模式工具栏 -->
+    <div v-if="analysisStore.batchSelectionEnabled" class="batch-toolbar">
+      <div class="batch-info">
+        已选 <strong>{{ analysisStore.selectedCount }}</strong> 条
+      </div>
+      <button @click="cancelBatchSelection" class="batch-cancel-btn">
+        取消
+      </button>
+      <button
+        v-if="analysisStore.selectedCount > 0"
+        @click="generateSummary"
+        class="batch-generate-btn"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          <path d="M12 9v3m0 0v5m-3-3h6" />
+        </svg>
+        生成AI总结
+      </button>
+    </div>
+
     <!-- 筛选标签 -->
     <div v-if="hasActiveFilters" class="filter-tags">
       <span class="filter-tag" v-if="filters.keyword">
@@ -45,7 +77,10 @@
           :key="record.record_id"
           :record="record"
           :is-selected="analysisStore.selectedRecord?.record_id === record.record_id"
+          :batch-selection-enabled="analysisStore.batchSelectionEnabled"
+          :is-batch-selected="analysisStore.isRecordSelected(record.record_id)"
           @select="handleSelect"
+          @toggle-select="handleToggleSelect"
         />
       </div>
     </div>
@@ -72,13 +107,25 @@
         </button>
       </div>
     </div>
+
+    <!-- 生成总结弹窗 -->
+    <GenerateSummaryModal
+      v-if="showGenerateModal"
+      :show="showGenerateModal"
+      :records-by-industry="recordsByIndustry"
+      @close="onModalClose"
+      @generate="onModalGenerate"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useAnalysisStore } from '@/stores/analysis'
+import { useSummaryStore } from '@/stores/summary'
+import type { SummaryProgress } from '@/stores/summary'
 import AnalysisResultCard from './AnalysisResultCard.vue'
+import GenerateSummaryModal from '@/components/summary/GenerateSummaryModal.vue'
 
 /**
  * 分析结果标签页组件
@@ -100,13 +147,20 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:total', count: number): void
   (e: 'update:filters', value: { keyword: string; industry: string; note_type: string }): void
+  (e: 'refresh-completed'): void
 }>()
 
 const analysisStore = useAnalysisStore()
+const summaryStore = useSummaryStore()
 
 // 分页状态
 const currentPage = ref(1)
 const loading = ref(false)
+
+// Modal 状态
+const showGenerateModal = ref(false)
+const selectedForSummary = ref<typeof analyzedRecords.value>([])
+const generateProgress = ref<{ step: string; message: string } | null>(null)
 
 // 获取已分析的记录 - 使用 completedRecords（status=completed 的记录）
 const analyzedRecords = computed(() => {
@@ -179,6 +233,24 @@ const hasActiveFilters = computed(() => {
   return !!(props.filters.keyword || props.filters.industry || props.filters.note_type)
 })
 
+// 按行业分组选中的记录（用于modal）
+const recordsByIndustry = computed(() => {
+  // 添加调试日志
+  // console.log('[recordsByIndustry] recomputing, selectedForSummary.value.length:', selectedForSummary.value.length)
+
+  const grouped = new Map<string, typeof selectedForSummary.value>()
+  for (const record of selectedForSummary.value) {
+    const industry = record.industry || '未分类'
+    if (!grouped.has(industry)) {
+      grouped.set(industry, [])
+    }
+    grouped.get(industry)!.push(record)
+  }
+
+  // console.log('[recordsByIndustry] result:', Array.from(grouped.entries()).map(([k, v]) => ({ industry: k, count: v.length })))
+  return grouped
+})
+
 // 通知父组件更新总数
 watch(() => filteredRecords.value.length, (count) => {
   emit('update:total', count)
@@ -195,6 +267,73 @@ function handleSelect(recordId: string) {
   if (record) {
     analysisStore.selectRecord(record)
   }
+}
+
+// 批量选择
+function enableBatchSelection() {
+  analysisStore.enableBatchSelection()
+}
+
+function cancelBatchSelection() {
+  analysisStore.disableBatchSelection()
+}
+
+function handleToggleSelect(recordId: string) {
+  analysisStore.toggleRecordSelection(recordId)
+}
+
+async function generateSummary() {
+  const selectedRecords = analyzedRecords.value.filter(r =>
+    analysisStore.isRecordSelected(r.record_id)
+  )
+
+  if (selectedRecords.length === 0) return
+
+  selectedForSummary.value = selectedRecords
+
+  // 调试日志
+  // console.log('=== DEBUG generateSummary ===')
+  // console.log('selectedRecords.length:', selectedRecords.length)
+  // console.log('selectedRecords:', selectedRecords.map(r => ({
+  //   id: r.record_id,
+  //   title: r.title,
+  //   industry: r.industry
+  // })))
+  // console.log('selectedForSummary.value.length:', selectedForSummary.value.length)
+  // console.log('recordsByIndustry:', recordsByIndustry.value)
+
+  showGenerateModal.value = true
+}
+
+function onModalClose() {
+  showGenerateModal.value = false
+  generateProgress.value = null
+}
+
+async function onModalGenerate(industries: string[]) {
+  // 为每个行业生成总结
+  for (const industry of industries) {
+    const industryRecords = selectedForSummary.value.filter(r => r.industry === industry)
+    const industryRecordIds = industryRecords.map(r => r.record_id)
+
+    const success = await summaryStore.generateSummary(
+      industry,
+      industryRecordIds,
+      (progress: SummaryProgress) => {
+        generateProgress.value = progress
+      }
+    )
+
+    if (!success) {
+      console.error(`Failed to generate summary for ${industry}`)
+    }
+  }
+
+  // 生成完成后
+  onModalClose()
+  analysisStore.disableBatchSelection()
+  // 刷新已完成记录列表
+  emit('refresh-completed')
 }
 
 // 清除单个筛选条件
@@ -420,5 +559,97 @@ onMounted(async () => {
 .page-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* 批量选择样式 */
+.batch-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  background: white;
+  border-radius: 10px;
+}
+
+.batch-enable-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid #e0dedb;
+  border-radius: 8px;
+  background: white;
+  color: #666;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.batch-enable-btn:hover {
+  border-color: var(--primary, #ff2442);
+  color: var(--primary, #ff2442);
+}
+
+.batch-enable-btn svg {
+  color: #666;
+}
+
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(255, 36, 66, 0.1) 0%, rgba(255, 107, 107, 0.1) 100%);
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.batch-info {
+  font-size: 14px;
+  color: var(--text-main, #1a1a1a);
+}
+
+.batch-info strong {
+  color: var(--primary, #ff2442);
+  font-weight: 600;
+}
+
+.batch-cancel-btn {
+  padding: 8px 16px;
+  border: 1px solid #e0dedb;
+  border-radius: 8px;
+  background: white;
+  color: #666;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.batch-cancel-btn:hover {
+  border-color: #ccc;
+  background: #f8f8f8;
+}
+
+.batch-generate-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary, #ff2442);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.batch-generate-btn:hover {
+  background: #e61f37;
+  transform: translateY(-1px);
+}
+
+.batch-generate-btn svg {
+  color: white;
 }
 </style>
