@@ -13,7 +13,8 @@
 
       <!-- 对标洞察面板 -->
       <InsightPanel
-        @apply-insight="handleApplyInsight"
+        :insight-selections="insightSelections"
+        @toggle-insight="toggleInsight"
       />
 
       <!-- 已应用的洞察 -->
@@ -52,6 +53,7 @@ const generatorStore = useGeneratorStore()
 const topicInput = ref('')
 const generating = ref(false)
 const selectedInsights = ref<AppliedInsight[]>([])
+const insightSelections = ref<Set<string>>(new Set())
 
 function handleGenerate() {
   if (!topicInput.value.trim()) return
@@ -98,11 +100,30 @@ function handleImagesChange(images: File[]) {
   // TODO: 处理参考图片
 }
 
-function handleApplyInsight(payload: { type: 'summary' | 'record'; data: any }) {
-  selectedInsights.value.push(payload)
+function toggleInsight(payload: { type: 'summary' | 'record'; data: any }) {
+  const key = `${payload.type}-${payload.type === 'summary' ? payload.data.id : payload.data.record_id}`
+
+  if (insightSelections.value.has(key)) {
+    // Deselect: remove from both selection tracking and applied list
+    insightSelections.value.delete(key)
+    const idx = selectedInsights.value.findIndex(i =>
+      i.type === payload.type &&
+      (payload.type === 'summary' ? i.data.id === payload.data.id : i.data.record_id === payload.data.record_id)
+    )
+    if (idx !== -1) {
+      selectedInsights.value.splice(idx, 1)
+    }
+  } else {
+    // Select: add to both selection tracking and applied list
+    insightSelections.value.add(key)
+    selectedInsights.value.push(payload)
+  }
 }
 
 function removeInsight(index: number) {
+  const removed = selectedInsights.value[index]
+  const key = `${removed.type}-${removed.type === 'summary' ? removed.data.id : removed.data.record_id}`
+  insightSelections.value.delete(key)
   selectedInsights.value.splice(index, 1)
 }
 
