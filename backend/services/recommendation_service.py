@@ -195,7 +195,7 @@ class RecommendationServiceV2:
                 # 【新增】确保有推荐洞察（懒加载）
                 record = self._ensure_insights(record, topic)
 
-                # 构建结果（直接从 record 中读取，不再调用 API）
+                # 构建结果
                 result = {
                     'record_id': record_id,
                     'record': record,
@@ -206,11 +206,62 @@ class RecommendationServiceV2:
                 }
                 scored_results.append(result)
 
-        # 按得分排序
+        # 按关键词得分排序，取TOP 30
         scored_results.sort(key=lambda x: x['match_score'], reverse=True)
+        top_candidates = scored_results[:30]
 
-        logger.info(f"[RECOMMEND_V2] Returning {len(scored_results[:limit])} results")
-        return scored_results[:limit]
+        if not top_candidates:
+            logger.warning("[RECOMMEND_V2] No candidates after initial filtering")
+            return []
+
+        # 【新增】AI语义评分阶段
+        try:
+            # 检查缓存
+            record_ids = [r['record_id'] for r in top_candidates]
+            cached_scores = self._get_semantic_scores_batch(topic, record_ids)
+
+            # 找出未缓存的候选
+            uncached_candidates = [
+                r for r in top_candidates
+                if r['record_id'] not in cached_scores
+            ]
+
+            # 调用 AI 评分未缓存的候选
+            if uncached_candidates:
+                logger.info(f"[RECOMMEND_V2] Requesting AI semantic scoring for {len(uncached_candidates)} uncached candidates")
+                ai_scores = self._ai_semantic_scoring(topic, uncached_candidates)
+
+                # 保存到缓存
+                self._save_semantic_scores_batch(topic, ai_scores)
+
+                # 合并缓存结果
+                cached_scores.update(ai_scores)
+
+            # 更新候选的最终得分
+            for result in top_candidates:
+                record_id = result['record_id']
+                if record_id in cached_scores:
+                    semantic_scores = cached_scores[record_id]
+                    result['semantic_scores'] = semantic_scores
+                    result['final_score'] = semantic_scores['final_score']
+                else:
+                    # 降级：使用关键词匹配分数（转换为0-10分）
+                    result['final_score'] = result['match_score'] * 10
+                    result['semantic_scores'] = None
+
+            # 按最终得分重新排序
+            top_candidates.sort(key=lambda x: x['final_score'], reverse=True)
+            logger.info(f"[RECOMMEND_V2] Re-ranked by AI semantic scores")
+
+        except Exception as e:
+            # 降级：使用关键词匹配分数
+            logger.warning(f"[RECOMMEND_V2] Semantic scoring failed, using keyword match scores: {e}")
+            for result in top_candidates:
+                result['final_score'] = result['match_score'] * 10
+                result['semantic_scores'] = None
+
+        logger.info(f"[RECOMMEND_V2] Returning {len(top_candidates[:limit])} results")
+        return top_candidates[:limit]
 
     def recommend_similar(
         self,
