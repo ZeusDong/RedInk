@@ -164,8 +164,11 @@ class RecommendationServiceV2:
 
         Returns:
             推荐结果列表，每个结果包含:
-            - record_id, record, match_score
-            - recommend_reasons, learnable_elements, match_level
+            - record_id, record, match_score (原始关键词匹配分数)
+            - final_score (AI语义评分后的最终分数, 0-10)
+            - semantic_scores (AI多维度分数, 包含topic_relevance等)
+            - match_level (基于final_score的等级)
+            - recommend_reasons, learnable_elements
         """
         logger.info(f"[RECOMMEND_V2] Getting recommendations: topic={topic}, industry={industry}, scenario={scenario}")
 
@@ -251,6 +254,14 @@ class RecommendationServiceV2:
 
             # 按最终得分重新排序
             top_candidates.sort(key=lambda x: x['final_score'], reverse=True)
+
+            # Update match_level based on final_score
+            for result in top_candidates:
+                final_score = result.get('final_score', 0)
+                # Convert 0-10 scale to 0-1 for match_level
+                normalized_score = final_score / 10
+                result['match_level'] = self._calculate_match_level(normalized_score)
+
             logger.info(f"[RECOMMEND_V2] Re-ranked by AI semantic scores")
 
         except Exception as e:
