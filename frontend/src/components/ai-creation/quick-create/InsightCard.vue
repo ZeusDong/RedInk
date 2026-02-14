@@ -89,7 +89,11 @@ const truncatedContent = computed((): string => {
 })
 
 function handleClick() {
-  emit('select', props.insight)
+  if (props.isSelected) {
+    emit('deselect', props.insight)
+  } else {
+    emit('select', props.insight)
+  }
 }
 
 function handleDeselect() {
