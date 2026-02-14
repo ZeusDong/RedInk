@@ -77,9 +77,12 @@ interface Template {
   id: string
   type: 'title' | 'structure' | 'visual'
   name: string
+  industry?: string
   pattern: string
   variables: string[]
   source_records: string[]
+  usage_count: number
+  description?: string
   examples: string[]
 }
 

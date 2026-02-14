@@ -49,11 +49,11 @@
       </div>
 
       <!-- 示例 -->
-      <div v-if="template.examples?.length > 0" class="examples-section">
+      <div v-if="(template.examples || []).length > 0" class="examples-section">
         <span class="examples-label">示例：</span>
         <div class="examples-list">
           <div
-            v-for="(example, idx) in template.examples.slice(0, 2)"
+            v-for="(example, idx) in (template.examples || []).slice(0, 2)"
             :key="idx"
             class="example-item"
           >
@@ -67,18 +67,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-
-interface Template {
-  id: string
-  type: 'title' | 'structure' | 'visual'
-  name: string
-  industry?: string
-  pattern: string
-  variables: string[]
-  usage_count: number
-  description?: string
-  examples: string[]
-}
+import type { Template } from '@/stores/template'
 
 const props = defineProps<{
   template: Template

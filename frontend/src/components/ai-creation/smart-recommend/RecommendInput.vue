@@ -32,7 +32,8 @@
     </div>
 
     <!-- 快捷筛选 -->
-    <div v-if="recommendations.length > 0" class="quick-filters">
+    <div v-if="false" class="quick-filters">
+      <!-- 暂时隐藏，由父组件控制显示 -->
       <span class="filter-label">场景：</span>
       <button
         v-for="scenario in scenarios"
@@ -66,7 +67,6 @@ import { ref } from 'vue'
 const topicInput = ref('')
 const loading = ref(false)
 const selectedScenario = ref<string | null>(null)
-const recommendations = ref<any[]>([])
 
 const scenarios = [
   { label: '新手入门', value: 'beginner' },

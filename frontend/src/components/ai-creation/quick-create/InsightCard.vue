@@ -17,20 +17,20 @@
 
     <div class="card-content">
       <!-- AI 总结内容 -->
-      <template v-if="type === 'summary'">
+      <template v-if="summary">
         <p class="summary-text">{{ truncatedContent }}</p>
         <div class="card-meta">
-          <span class="record-count">{{ insight.record_count }} 条笔记</span>
-          <span class="industry">{{ insight.industry }}</span>
+          <span class="record-count">{{ summary.record_count }} 条笔记</span>
+          <span class="industry">{{ summary.industry }}</span>
         </div>
       </template>
 
       <!-- 笔记内容 -->
-      <template v-else>
-        <h5 class="record-title">{{ insight.title }}</h5>
+      <template v-else-if="record">
+        <h5 class="record-title">{{ record.title }}</h5>
         <div class="record-metrics">
-          <span class="metric">👍 {{ formatCount(insight.metrics?.likes) }}</span>
-          <span class="metric">⭐ {{ formatCount(insight.metrics?.saves) }}</span>
+          <span class="metric">👍 {{ formatCount(record.metrics?.likes) }}</span>
+          <span class="metric">⭐ {{ formatCount(record.metrics?.saves) }}</span>
         </div>
       </template>
     </div>
@@ -43,20 +43,16 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-
-interface Summary {
-  id: string
-  content: string
-  record_count: number
-  industry: string
-}
+import type { Summary } from '@/stores/summary'
 
 interface ReferenceRecord {
   record_id: string
   title: string
+  industry?: string
   metrics?: {
     likes?: number
     saves?: number
+    total_engagement?: number
   }
 }
 
@@ -75,9 +71,18 @@ const typeLabel = computed(() => {
   return props.type === 'summary' ? '📝 总结' : '📄 笔记'
 })
 
-const truncatedContent = computed(() => {
-  if (props.type === 'summary') {
-    const content = (props.insight as Summary).content
+// Type-narrowed computed properties with explicit types
+const summary = computed((): Summary | null => {
+  return props.type === 'summary' ? (props.insight as Summary) : null
+})
+
+const record = computed((): ReferenceRecord | null => {
+  return props.type === 'record' ? (props.insight as ReferenceRecord) : null
+})
+
+const truncatedContent = computed((): string => {
+  if (summary.value) {
+    const content = summary.value.content
     return content.length > 100 ? content.slice(0, 100) + '...' : content
   }
   return ''

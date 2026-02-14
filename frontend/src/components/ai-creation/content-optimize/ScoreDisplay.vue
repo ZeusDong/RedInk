@@ -67,12 +67,12 @@ interface ContentScore {
 }
 
 const props = defineProps<{
-  score: ContentScore
+  score: ContentScore | null
   improvement?: number
 }>()
 
-const score = computed(() => Math.round(props.score.total))
-const breakdown = computed(() => props.score.breakdown)
+const score = computed(() => props.score ? Math.round(props.score.total) : 0)
+const breakdown = computed(() => props.score?.breakdown ?? {})
 const improvement = computed(() => props.improvement || 0)
 
 const circumference = computed(() => {
@@ -98,7 +98,8 @@ function getLabel(key: string): string {
 }
 
 function getScoreClass(key: string): string {
-  const value = breakdown.value[key]
+  const value = breakdown.value[key as keyof typeof breakdown.value]
+  if (!value) return 'poor'
   if (value >= 80) return 'excellent'
   if (value >= 60) return 'good'
   if (value >= 40) return 'fair'

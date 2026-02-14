@@ -52,13 +52,13 @@
       </div>
 
       <!-- 空状态 -->
-      <div v-if="!loading && filteredSummaries.length === 0 && filteredTopRecords.length === 0" class="empty-state">
+      <div v-if="!summaryStore.loading && !analysisStore.loading && filteredSummaries.length === 0 && filteredTopRecords.length === 0" class="empty-state">
         <p>暂无相关洞察，请先完成对标分析</p>
         <RouterLink to="/analysis" class="link">前往分析 →</RouterLink>
       </div>
 
       <!-- 加载状态 -->
-      <div v-if="loading" class="loading-state">
+      <div v-if="summaryStore.loading || analysisStore.loading" class="loading-state">
         <p>加载中...</p>
       </div>
     </div>
@@ -66,40 +66,41 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import { useSummaryStore } from '@/stores/summary'
+import { useAnalysisStore } from '@/stores/analysis'
 import InsightCard from './InsightCard.vue'
 
-interface Summary {
-  id: string
-  content: string
-  record_count: number
-  industry: string
-}
-
-interface ReferenceRecord {
-  record_id: string
-  title: string
-  industry?: string
-  metrics?: {
-    likes?: number
-    saves?: number
-    total_engagement?: number
-  }
-}
+const summaryStore = useSummaryStore()
+const analysisStore = useAnalysisStore()
 
 const expanded = ref(false)
-const loading = ref(false)
 const selectedIndustry = ref('')
 const selectedInsights = ref<Set<string>>(new Set())
 
-// 模拟数据 - 实际应从 store 获取
-const industries = ref<string[]>(['美妆护肤', '美食', '旅行', '健身', '数码'])
-const summaries = ref<Summary[]>([])
-const topRecords = ref<ReferenceRecord[]>([])
+const industries = computed(() => summaryStore.industries)
+
+const summaries = computed(() => {
+  let results = summaryStore.summaries
+  if (selectedIndustry.value) {
+    results = results.filter(s => s.industry === selectedIndustry.value)
+  }
+  return results.slice(0, 5)
+})
+
+const topRecords = computed(() => {
+  let records = [...analysisStore.completedRecords]
+  if (selectedIndustry.value) {
+    records = records.filter(r => r.industry === selectedIndustry.value)
+  }
+  return records
+    .sort((a, b) => (b.metrics?.total_engagement || 0) - (a.metrics?.total_engagement || 0))
+    .slice(0, 5)
+})
 
 const emit = defineEmits<{
-  applyInsight: [payload: { type: 'summary' | 'record'; data: Summary | ReferenceRecord }]
+  applyInsight: [payload: { type: 'summary' | 'record'; data: any }]
 }>()
 
 function togglePanel() {
@@ -110,77 +111,34 @@ function togglePanel() {
 }
 
 async function loadInsights() {
-  loading.value = true
   try {
-    // TODO: 实际应从 store 加载数据
-    // await summaryStore.loadSummaries()
-    // await analysisStore.loadCompletedRecords()
-
-    // 模拟数据加载
-    summaries.value = [
-      {
-        id: '1',
-        content: '美妆护肤类内容在春季应重点关注防晒和保湿主题，用户对成分透明的产品更感兴趣。',
-        record_count: 15,
-        industry: '美妆护肤'
-      }
-    ]
-
-    topRecords.value = [
-      {
-        record_id: 'rec1',
-        title: '春季护肤必备清单',
-        industry: '美妆护肤',
-        metrics: {
-          likes: 15000,
-          saves: 8000,
-          total_engagement: 25000
-        }
-      }
-    ]
-  } finally {
-    loading.value = false
+    await summaryStore.loadSummaries()
+    await analysisStore.loadCompletedRecords()
+  } catch (error) {
+    console.error('加载洞察数据失败:', error)
   }
 }
 
-function handleSelectSummary(summary: Summary) {
+function handleSelectSummary(summary: any) {
   selectedInsights.value.add(`summary-${summary.id}`)
   emit('applyInsight', { type: 'summary', data: summary })
 }
 
-function handleDeselectSummary(summary: Summary) {
+function handleDeselectSummary(summary: any) {
   selectedInsights.value.delete(`summary-${summary.id}`)
 }
 
-function handleSelectRecord(record: ReferenceRecord) {
+function handleSelectRecord(record: any) {
   selectedInsights.value.add(`record-${record.record_id}`)
   emit('applyInsight', { type: 'record', data: record })
 }
 
-function handleDeselectRecord(record: ReferenceRecord) {
+function handleDeselectRecord(record: any) {
   selectedInsights.value.delete(`record-${record.record_id}`)
 }
 
-// 过滤后的总结
-const filteredSummaries = computed(() => {
-  let results = summaries.value
-  if (selectedIndustry.value) {
-    results = results.filter(s => s.industry === selectedIndustry.value)
-  }
-  return results.slice(0, 5)
-})
-
-// 过滤后的记录
-const filteredTopRecords = computed(() => {
-  let records = [...topRecords.value]
-  if (selectedIndustry.value) {
-    records = records.filter(r => r.industry === selectedIndustry.value)
-  }
-  // 按互动量排序
-  return records
-    .sort((a, b) => (b.metrics?.total_engagement || 0) - (a.metrics?.total_engagement || 0))
-    .slice(0, 5)
-})
+const filteredSummaries = summaries
+const filteredTopRecords = topRecords
 </script>
 
 <style scoped>

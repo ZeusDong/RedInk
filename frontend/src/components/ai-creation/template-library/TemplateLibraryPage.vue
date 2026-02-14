@@ -19,7 +19,7 @@
     <div class="filters-bar">
       <div class="filter-group">
         <label class="filter-label">类型：</label>
-        <select v-model="filterType" @change="handleFilter" class="filter-select">
+        <select v-model="templateStore.selectedType" @change="handleFilter" class="filter-select">
           <option value="">全部</option>
           <option value="title">标题模板</option>
           <option value="structure">结构模板</option>
@@ -29,9 +29,9 @@
 
       <div class="filter-group">
         <label class="filter-label">行业：</label>
-        <select v-model="filterIndustry" @change="handleFilter" class="filter-select">
+        <select v-model="templateStore.selectedIndustry" @change="handleFilter" class="filter-select">
           <option value="">全部</option>
-          <option v-for="ind in industries" :key="ind" :value="ind">
+          <option v-for="ind in templateStore.industries" :key="ind" :value="ind">
             {{ ind }}
           </option>
         </select>
@@ -48,9 +48,9 @@
     </div>
 
     <!-- 模板列表 -->
-    <div v-if="!loading && filteredTemplates.length > 0" class="templates-grid">
+    <div v-if="!templateStore.loading && templateStore.filteredTemplates.length > 0" class="templates-grid">
       <TemplateCard
-        v-for="template in filteredTemplates"
+        v-for="template in sortedTemplates"
         :key="template.id"
         :template="template"
         @click="handleSelectTemplate"
@@ -60,14 +60,14 @@
     </div>
 
     <!-- 空状态 -->
-    <div v-else-if="!loading && filteredTemplates.length === 0" class="empty-state">
+    <div v-else-if="!templateStore.loading && templateStore.filteredTemplates.length === 0" class="empty-state">
       <div class="empty-icon">📋</div>
       <h3>暂无模板</h3>
       <p>请调整筛选条件或创建新模板</p>
     </div>
 
     <!-- 加载状态 -->
-    <div v-if="loading" class="loading-state">
+    <div v-if="templateStore.loading" class="loading-state">
       <div class="spinner"></div>
       <p>加载中...</p>
     </div>
@@ -86,144 +86,69 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useTemplateStore } from '@/stores/template'
 import TemplateCard from './TemplateCard.vue'
 import TemplatePreview from './TemplatePreview.vue'
 
-interface Template {
-  id: string
-  type: 'title' | 'structure' | 'visual'
-  name: string
-  industry?: string
-  pattern: string
-  variables: string[]
-  source_records: string[]
-  usage_count: number
-  description?: string
-  examples: string[]
-}
-
 const router = useRouter()
-const loading = ref(false)
-const templates = ref<Template[]>([])
-const filterType = ref('')
-const filterIndustry = ref('')
+const templateStore = useTemplateStore()
 const sortBy = ref('usage')
 const showCreateModal = ref(false)
-const previewTemplate = ref<Template | null>(null)
+const previewTemplate = ref<any>(null)
 const showPreviewModal = ref(false)
 
-const industries = ref(['美妆护肤', '美食', '旅行', '健身', '数码'])
+const sortedTemplates = computed(() => {
+  const templates = [...templateStore.filteredTemplates]
 
-const filteredTemplates = computed(() => {
-  let results = [...templates.value]
-
-  // 类型筛选
-  if (filterType.value) {
-    results = results.filter(t => t.type === filterType.value)
+  switch (sortBy.value) {
+    case 'usage':
+      return templates.sort((a, b) => b.usage_count - a.usage_count)
+    case 'name':
+      return templates.sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+    case 'newest':
+      return templates.sort((a, b) => (b.id || '').localeCompare(a.id || ''))
+    default:
+      return templates
   }
-
-  // 行业筛选
-  if (filterIndustry.value) {
-    results = results.filter(t => t.industry === filterIndustry.value)
-  }
-
-  // 排序
-  results.sort((a, b) => {
-    switch (sortBy.value) {
-      case 'usage':
-        return (b.usage_count || 0) - (a.usage_count || 0)
-      case 'name':
-        return a.name.localeCompare(b.name, 'zh')
-      case 'newest':
-        return b.id.localeCompare(a.id)
-      default:
-        return 0
-    }
-  })
-
-  return results
 })
 
 async function loadTemplates() {
-  loading.value = true
-  try {
-    // TODO: Call backend API
-    // const response = await fetch('/api/templates')
-    // const data = await response.json()
-
-    // Simulated data for now
-    await new Promise(resolve => setTimeout(resolve, 500))
-
-    templates.value = [
-      {
-        id: 'tpl1',
-        type: 'title',
-        name: '吸引眼球的标题公式',
-        industry: '美妆护肤',
-        pattern: '{主题}的{数字}个秘密，让你惊艳{季节}',
-        variables: ['{主题}', '{数字}', '{季节}'],
-        usage_count: 156,
-        description: '通过数字和季节增强标题吸引力',
-        examples: ['春季护肤的5个秘密，让你惊艳春天', '办公室健身的3个秘密，让你惊艳工作日'],
-        source_records: []
-      },
-      {
-        id: 'tpl2',
-        type: 'title',
-        name: '吸引眼球的标题公式',
-        industry: '美妆护肤',
-        pattern: '{主题}的{数字}个秘密，让你惊艳{季节}',
-        variables: ['{主题}', '{数字}', '{季节}'],
-        usage_count: 156,
-        description: '通过数字和季节增强标题吸引力',
-        examples: ['春季护肤的5个秘密，让你惊艳春天', '办公室健身的3个秘密，让你惊艳工作日'],
-        source_records: []
-      },
-      {
-        id: 'tpl2',
-        type: 'structure',
-        name: '种草笔记结构',
-        industry: '美妆护肤',
-        pattern: '引入 → 问题描述 → 解决方案 → 使用效果',
-        variables: [],
-        usage_count: 89,
-        description: '经典的问题-解决方案型结构',
-        examples: [],
-        source_records: []
-      }
-    ]
-  } finally {
-    loading.value = false
-  }
+  await templateStore.loadTemplates()
 }
 
 function handleFilter() {
-  // Filter handled by computed property
+  // Filter handled by store computed property
 }
 
 function handleSort() {
   // Sort handled by computed property
 }
 
-function handleSelectTemplate(template: Template) {
+function handleSelectTemplate(template: any) {
   previewTemplate.value = template
   showPreviewModal.value = true
 }
 
-function handlePreviewTemplate(template: Template) {
+function handlePreviewTemplate(template: any) {
   previewTemplate.value = template
   showPreviewModal.value = true
 }
 
-function handleApplyTemplate(template: Template) {
-  // Navigate to quick create with template applied
-  router.push({
-    name: 'QuickCreate',
-    query: { template: template.id }
+async function handleApplyTemplate(template: any) {
+  const result = await templateStore.applyTemplate(template.id, {
+    topic: '', // 将由用户输入
+    industry: template.industry
   })
+
+  if (result) {
+    router.push({
+      name: 'QuickCreate',
+      query: { template: template.id }
+    })
+  }
 }
 
-function handleApplyFromPreview(template: Template) {
+function handleApplyFromPreview(template: any) {
   showPreviewModal.value = false
   handleApplyTemplate(template)
 }

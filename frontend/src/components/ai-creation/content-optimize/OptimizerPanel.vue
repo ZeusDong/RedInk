@@ -109,56 +109,22 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useOptimizerStore } from '@/stores/optimizer'
+import type { Suggestion } from '@/stores/optimizer'
 import ScoreDisplay from './ScoreDisplay.vue'
 import SuggestionCard from './SuggestionCard.vue'
 
-interface ContentScore {
-  total: number
-  breakdown: {
-    title: number
-    structure: number
-    visual: number
-    engagement: number
-  }
-}
-
-interface Suggestion {
-  id: string
-  type: 'title' | 'structure' | 'visual' | 'engagement'
-  severity: 'critical' | 'warning' | 'info' | 'success'
-  message: string
-  detail?: string
-  action_type: 'edit' | 'insert' | 'replace' | 'reference'
-  action_data?: any
-  reference_record?: {
-    id: string
-    title: string
-    url?: string
-  }
-  applied: boolean
-}
-
-// 模拟 store (实际应从 store 导入)
-const optimizerStore = ref<{
-  currentContent: { title?: string; body?: string } | null
-  score: ContentScore | null
-  suggestions: Suggestion[]
-}>({
-  currentContent: null,
-  score: null,
-  suggestions: []
-})
-
+const optimizerStore = useOptimizerStore()
 const inputMode = ref<'paste' | 'import'>('paste')
 const pastedContent = ref('')
 
 const pendingSuggestions = computed(() => {
-  return optimizerStore.value.suggestions.filter(s => !s.applied)
+  return optimizerStore.suggestions.filter(s => !s.applied)
 })
 
 const improvementPotential = computed(() => {
-  const appliedCount = optimizerStore.value.suggestions.filter(s => s.applied).length
-  const totalImprovable = optimizerStore.value.suggestions.length
+  const appliedCount = optimizerStore.suggestions.filter(s => s.applied).length
+  const totalImprovable = optimizerStore.suggestions.length
   if (totalImprovable === 0) return 0
   return Math.round((appliedCount / totalImprovable) * 100)
 })
@@ -166,47 +132,29 @@ const improvementPotential = computed(() => {
 async function handleAnalyze() {
   if (!pastedContent.value.trim()) return
 
-  // TODO: Call backend API
-  // const response = await fetch('/api/optimize/analyze', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ content: { body: pastedContent.value } })
-  // })
-  // const data = await response.json()
+  try {
+    const response = await fetch('/api/optimize/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: {
+          body: pastedContent.value
+        }
+      })
+    })
 
-  // Simulated analysis for now
-  optimizerStore.value = {
-    currentContent: { body: pastedContent.value },
-    score: {
-      total: 65,
-      breakdown: {
-        title: 70,
-        structure: 60,
-        visual: 75,
-        engagement: 55
-      }
-    },
-    suggestions: [
-      {
-        id: 's1',
-        type: 'title',
-        severity: 'warning',
-        message: '标题可以更具吸引力',
-        detail: '建议使用数字或提问来增加点击率',
-        action_type: 'edit',
-        applied: false
-      },
-      {
-        id: 's2',
-        type: 'engagement',
-        severity: 'info',
-        message: '添加互动引导',
-        detail: '在内容结尾添加提问，引导用户评论和分享',
-        action_type: 'insert',
-        action_data: { text: '你觉得这个建议怎么样？欢迎在评论区分享你的想法！' },
-        applied: false
-      }
-    ]
+    const data = await response.json()
+    if (data.success) {
+      optimizerStore.currentContent = { body: pastedContent.value }
+      optimizerStore.score = data.data.score
+      optimizerStore.suggestions = data.data.suggestions || []
+    } else {
+      console.error('分析失败:', data.error)
+      alert('内容分析失败: ' + (data.error || '未知错误'))
+    }
+  } catch (error) {
+    console.error('分析异常:', error)
+    alert('内容分析失败，请稍后重试')
   }
 }
 
@@ -216,16 +164,53 @@ async function handleImport() {
 }
 
 async function handleApplySuggestion(suggestion: Suggestion) {
-  // TODO: Apply suggestion via API
-  suggestion.applied = true
+  try {
+    const response = await fetch('/api/optimize/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        suggestion_id: suggestion.id,
+        action_type: suggestion.action_type,
+        action_data: suggestion.action_data
+      })
+    })
+
+    const data = await response.json()
+    if (data.success) {
+      suggestion.applied = true
+      if (data.data.updated_content) {
+        optimizerStore.currentContent = data.data.updated_content
+      }
+      if (data.data.new_score) {
+        optimizerStore.score = data.data.new_score
+      }
+    }
+  } catch (error) {
+    console.error('应用建议失败:', error)
+  }
 }
 
-function handleDismissSuggestion(suggestion: Suggestion) {
-  suggestion.applied = true
+async function handleDismissSuggestion(suggestion: Suggestion) {
+  try {
+    const response = await fetch('/api/optimize/dismiss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        suggestion_id: suggestion.id
+      })
+    })
+
+    const data = await response.json()
+    if (data.success) {
+      suggestion.applied = true
+    }
+  } catch (error) {
+    console.error('忽略建议失败:', error)
+  }
 }
 
 async function handleApplyAll() {
-  for (const suggestion of optimizerStore.value.suggestions) {
+  for (const suggestion of optimizerStore.suggestions) {
     if (suggestion.severity === 'critical' || suggestion.severity === 'warning') {
       await handleApplySuggestion(suggestion)
     }
@@ -237,7 +222,7 @@ function handleViewReference(record: any) {
 }
 
 function handleCopy() {
-  const content = optimizerStore.value.currentContent
+  const content = optimizerStore.currentContent
   if (!content) return
 
   const text = [
@@ -250,11 +235,7 @@ function handleCopy() {
 }
 
 function handleReset() {
-  optimizerStore.value = {
-    currentContent: null,
-    score: null,
-    suggestions: []
-  }
+  optimizerStore.reset()
   pastedContent.value = ''
   inputMode.value = 'paste'
 }
