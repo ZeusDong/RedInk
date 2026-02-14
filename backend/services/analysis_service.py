@@ -6,6 +6,7 @@
 
 import json
 import logging
+import re
 import sqlite3
 import threading
 from datetime import datetime
@@ -335,14 +336,23 @@ class AnalysisService:
             print(f"Error getting analysis result: {e}")
             return None
 
-    def set_analysis_result(self, record_id: str, analyzed: bool, content: Optional[str] = None) -> bool:
+    def set_analysis_result(
+        self,
+        record_id: str,
+        analyzed: bool,
+        content: Optional[str] = None,
+        recommend_reasons: Optional[list] = None,
+        learnable_elements: Optional[dict] = None
+    ) -> bool:
         """
-        设置笔记的分析结果
+        设置笔记的分析结果（扩展版，支持推荐洞察）
 
         Args:
             record_id: 笔记 ID
             analyzed: 是否已分析
             content: 分析内容
+            recommend_reasons: 推荐理由列表
+            learnable_elements: 可学习元素字典
 
         Returns:
             bool: 是否成功
@@ -352,11 +362,28 @@ class AnalysisService:
         cursor = conn.cursor()
 
         try:
-            # 保存分析结果
-            cursor.execute('''
-                INSERT OR REPLACE INTO analysis_results (record_id, analyzed, content, updated_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            ''', (record_id, 1 if analyzed else 0, content))
+            # 检查列是否存在（向后兼容）
+            has_insights_columns = self._check_insights_columns(cursor)
+
+            if has_insights_columns:
+                # 使用扩展的 INSERT（包含推荐洞察字段）
+                cursor.execute('''
+                    INSERT OR REPLACE INTO analysis_results
+                    (record_id, analyzed, content, recommend_reasons, learnable_elements, updated_at)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (
+                    record_id,
+                    1 if analyzed else 0,
+                    content,
+                    json.dumps(recommend_reasons, ensure_ascii=False) if recommend_reasons else None,
+                    json.dumps(learnable_elements, ensure_ascii=False) if learnable_elements else None
+                ))
+            else:
+                # 向后兼容：旧版本数据库，只保存基本字段
+                cursor.execute('''
+                    INSERT OR REPLACE INTO analysis_results (record_id, analyzed, content, updated_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (record_id, 1 if analyzed else 0, content))
 
             # 同时更新 pending_notes 表中的状态
             if analyzed:
@@ -537,6 +564,96 @@ class AnalysisService:
         """生成唯一 ID"""
         import uuid
         return str(uuid.uuid4())
+
+    def _check_insights_columns(self, cursor: sqlite3.Cursor) -> bool:
+        """
+        检查 analysis_results 表是否有推荐洞察字段
+
+        Args:
+            cursor: 数据库游标
+
+        Returns:
+            bool: 是否有推荐洞察字段
+        """
+        try:
+            cursor.execute('''
+                SELECT recommend_reasons FROM analysis_results LIMIT 1
+            ''')
+            return True
+        except sqlite3.OperationalError:
+            return False
+
+    def _parse_analysis_response(self, response: str) -> Dict[str, Any]:
+        """
+        解析 AI 分析响应（支持嵌套的 JSON 结构）
+
+        Args:
+            response: AI 返回的响应文本
+
+        Returns:
+            Dict: 解析后的数据，包含 content, recommend_reasons, learnable_elements
+        """
+        # 提取 JSON（支持代码块格式）
+        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            # 尝试直接解析
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                json_str = json_match.group(0)
+            else:
+                # 向后兼容：旧格式直接返回分析内容
+                logger.warning("[ANALYSIS_SERVICE] No JSON found in response, using legacy format")
+                return {
+                    'content': response,
+                    'recommend_reasons': None,
+                    'learnable_elements': None
+                }
+
+        try:
+            data = json.loads(json_str)
+
+            # 新格式：嵌套结构 {analysis: {...}, recommend_insights: {...}}
+            if 'analysis' in data and 'recommend_insights' in data:
+                analysis = data['analysis']
+                insights = data['recommend_insights']
+
+                # 提取分析内容（向后兼容：组合 conclusion, breakdown, suggestions）
+                content_parts = []
+                if analysis.get('conclusion'):
+                    content_parts.append(f"**结论：** {analysis['conclusion']}")
+                if analysis.get('breakdown'):
+                    content_parts.append(f"**7层拆解：**\n{analysis['breakdown']}")
+                if analysis.get('suggestions'):
+                    s = analysis['suggestions']
+                    content_parts.append(f"**模仿建议：**\n- 保留：{s.get('keep', '')}\n- 修改：{s.get('change', '')}")
+
+                content = '\n\n'.join(content_parts)
+
+                return {
+                    'content': content,
+                    'recommend_reasons': insights.get('recommend_reasons', []),
+                    'learnable_elements': insights.get('learnable_elements', {})
+                }
+
+            # 旧格式：直接是分析内容
+            else:
+                logger.warning("[ANALYSIS_SERVICE] Legacy response format detected")
+                return {
+                    'content': json_str,
+                    'recommend_reasons': None,
+                    'learnable_elements': None
+                }
+
+        except json.JSONDecodeError as e:
+            logger.error(f"[ANALYSIS_SERVICE] Failed to parse JSON response: {e}")
+            # 降级：使用原始响应
+            return {
+                'content': response,
+                'recommend_reasons': None,
+                'learnable_elements': None
+            }
 
     # ==================== Visual Description Generation ====================
 
@@ -815,20 +932,35 @@ class AnalysisService:
             print(f"[ANALYSIS] 正在调用 AI API...")
             logger.info(f"[ANALYSIS_SERVICE] Calling AI text generation API")
 
-            analysis_content = text_client.generate_text(
+            analysis_response = text_client.generate_text(
                 prompt=prompt,
                 temperature=0.7,  # Lower temp for more structured analysis
                 max_output_tokens=8000
             )
 
-            print(f"[ANALYSIS] AI 分析完成，返回内容长度: {len(analysis_content)} 字符")
-            logger.info(f"[ANALYSIS_SERVICE] AI analysis completed, content length: {len(analysis_content)} chars")
+            print(f"[ANALYSIS] AI 分析完成，返回内容长度: {len(analysis_response)} 字符")
+            logger.info(f"[ANALYSIS_SERVICE] AI analysis completed, response length: {len(analysis_response)} chars")
 
-            # 5. Save result to database
+            # 5. Parse response to extract analysis content and recommendations
+            print(f"[ANALYSIS] 正在解析响应...")
+            logger.debug(f"[ANALYSIS_SERVICE] Parsing AI response")
+
+            parsed_data = self._parse_analysis_response(analysis_response)
+            analysis_content = parsed_data['content']
+            recommend_reasons = parsed_data.get('recommend_reasons')
+            learnable_elements = parsed_data.get('learnable_elements')
+
+            # 6. Save result to database
             print(f"[ANALYSIS] 正在保存到数据库...")
             logger.info(f"[ANALYSIS_SERVICE] Saving analysis result to database")
 
-            self.set_analysis_result(record_id, analyzed=True, content=analysis_content)
+            self.set_analysis_result(
+                record_id,
+                analyzed=True,
+                content=analysis_content,
+                recommend_reasons=recommend_reasons,
+                learnable_elements=learnable_elements
+            )
 
             print(f"[ANALYSIS] 已保存到数据库: record_id={record_id}")
             logger.info(f"[ANALYSIS_SERVICE] Analysis result saved for record_id={record_id}")

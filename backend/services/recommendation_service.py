@@ -165,17 +165,17 @@ class RecommendationServiceV2:
 
             # 最低相关性阈值提高到0.3
             if score_data['match_score'] >= 0.3:
-                # 获取或生成洞察（带缓存）
-                insights = self._get_insights_with_cache(topic, record)
+                # 【新增】确保有推荐洞察（懒加载）
+                record = self._ensure_insights(record, topic)
 
-                # 构建结果
+                # 构建结果（直接从 record 中读取，不再调用 API）
                 result = {
                     'record_id': record_id,
                     'record': record,
                     'match_score': score_data['match_score'],
                     'match_level': self._calculate_match_level(score_data['match_score']),
-                    'recommend_reasons': insights.get('recommend_reasons', []),
-                    'learnable_elements': insights.get('learnable_elements', {})
+                    'recommend_reasons': record.get('recommend_reasons', []),
+                    'learnable_elements': record.get('learnable_elements', {})
                 }
                 scored_results.append(result)
 
@@ -241,7 +241,7 @@ class RecommendationServiceV2:
 
     def _get_analyzed_records(self) -> Dict[str, Any]:
         """
-        从 analysis.db 获取已分析成功的笔记
+        从 analysis.db 获取已分析成功的笔记（包含推荐洞察字段）
 
         Returns:
             {record_id: record_dict} 的字典
@@ -260,9 +260,10 @@ class RecommendationServiceV2:
                 logger.warning("[RECOMMEND_V2] analysis_results table not found")
                 return {}
 
-            # 只获取已分析成功的记录
+            # 获取已分析成功的记录（包含推荐洞察字段）
             cursor.execute('''
-                SELECT ar.record_id, ar.content, ar.created_at, pn.data
+                SELECT ar.record_id, ar.content, ar.recommend_reasons, ar.learnable_elements,
+                       ar.created_at, pn.data
                 FROM analysis_results ar
                 INNER JOIN pending_notes pn ON ar.record_id = pn.record_id
                 WHERE ar.analyzed = 1
@@ -277,6 +278,24 @@ class RecommendationServiceV2:
                     record = json.loads(row['data'])
                     # 添加分析内容
                     record['analysis_content'] = row['content']
+
+                    # 从数据库读取预计算的推荐洞察
+                    if row['recommend_reasons']:
+                        try:
+                            record['recommend_reasons'] = json.loads(row['recommend_reasons'])
+                        except (json.JSONDecodeError, TypeError):
+                            record['recommend_reasons'] = []
+                    else:
+                        record['recommend_reasons'] = None  # 标记为缺失，触发懒加载
+
+                    if row['learnable_elements']:
+                        try:
+                            record['learnable_elements'] = json.loads(row['learnable_elements'])
+                        except (json.JSONDecodeError, TypeError):
+                            record['learnable_elements'] = {}
+                    else:
+                        record['learnable_elements'] = None  # 标记为缺失，触发懒加载
+
                     record['analyzed_at'] = row['created_at']
                     results[row['record_id']] = record
                 except (json.JSONDecodeError, KeyError) as e:
@@ -482,6 +501,103 @@ class RecommendationServiceV2:
             return True
         except sqlite3.Error as e:
             logger.warning(f"[RECOMMEND_V2] Cache save error: {e}")
+            return False
+
+    def _ensure_insights(
+        self,
+        record: Dict[str, Any],
+        topic: str
+    ) -> Dict[str, Any]:
+        """
+        确保记录有推荐洞察，缺失时懒加载补充
+
+        Args:
+            record: 笔记数据字典
+            topic: 搜索主题（用于生成推荐理由）
+
+        Returns:
+            包含完整推荐洞察的记录
+        """
+        # 检查是否已有推荐洞察
+        has_reasons = bool(record.get('recommend_reasons'))
+        has_elements = bool(record.get('learnable_elements'))
+
+        if has_reasons and has_elements:
+            # 已有完整数据，直接返回
+            return record
+
+        record_id = record.get('record_id', '')
+        logger.info(f"[RECOMMEND_V2] Missing insights for {record_id}, lazy loading...")
+
+        try:
+            # 调用 AI 生成推荐洞察
+            insights = self._ai_extract_insights(topic, record)
+
+            # 更新记录
+            if not has_reasons:
+                record['recommend_reasons'] = insights.get('recommend_reasons', [])
+            if not has_elements:
+                record['learnable_elements'] = insights.get('learnable_elements', {})
+
+            # 保存到数据库（下次直接查询）
+            self._save_insights_to_db(record_id, insights)
+
+            logger.info(f"[RECOMMEND_V2] Lazy loaded insights for {record_id}")
+            return record
+
+        except Exception as e:
+            logger.warning(f"[RECOMMEND_V2] Failed to lazy load insights for {record_id}: {e}")
+
+            # 降级：使用默认值
+            if not has_reasons:
+                record['recommend_reasons'] = [
+                    f"行业: {record.get('industry', '其他')}",
+                    f"互动量: {record.get('metrics', {}).get('total_engagement', 0)}"
+                ]
+            if not has_elements:
+                record['learnable_elements'] = {
+                    'hook': '优质开头',
+                    'structure': '清晰结构',
+                    'tone': '友好风格',
+                    'cta': '有效互动'
+                }
+
+            return record
+
+    def _save_insights_to_db(
+        self,
+        record_id: str,
+        insights: Dict[str, Any]
+    ) -> bool:
+        """
+        保存推荐洞察到数据库
+
+        Args:
+            record_id: 记录ID
+            insights: 包含 recommend_reasons 和 learnable_elements 的字典
+
+        Returns:
+            是否保存成功
+        """
+        conn = self._get_analysis_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('''
+                UPDATE analysis_results
+                SET recommend_reasons = ?,
+                    learnable_elements = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE record_id = ?
+            ''', (
+                json.dumps(insights.get('recommend_reasons', []), ensure_ascii=False),
+                json.dumps(insights.get('learnable_elements', {}), ensure_ascii=False),
+                record_id
+            ))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.warning(f"[RECOMMEND_V2] Failed to save insights to DB: {e}")
             return False
 
     def _ai_extract_insights(
