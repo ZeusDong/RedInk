@@ -28,9 +28,9 @@
             :key="summary.id"
             :insight="summary"
             type="summary"
-            :is-selected="selectedInsights.has(`summary-${summary.id}`)"
-            @select="handleSelectSummary"
-            @deselect="handleDeselectSummary"
+            :is-selected="isSelected(`summary-${summary.id}`)"
+            @select="handleToggleSummary"
+            @deselect="handleToggleSummary"
           />
         </div>
       </div>
@@ -44,9 +44,9 @@
             :key="record.record_id"
             :insight="record"
             type="record"
-            :is-selected="selectedInsights.has(`record-${record.record_id}`)"
-            @select="handleSelectRecord"
-            @deselect="handleDeselectRecord"
+            :is-selected="isSelected(`record-${record.record_id}`)"
+            @select="handleToggleRecord"
+            @deselect="handleToggleRecord"
           />
         </div>
       </div>
@@ -75,9 +75,12 @@ import InsightCard from './InsightCard.vue'
 const summaryStore = useSummaryStore()
 const analysisStore = useAnalysisStore()
 
+const props = defineProps<{
+  insightSelections: Set<string>
+}>()
+
 const expanded = ref(false)
 const selectedIndustry = ref('')
-const selectedInsights = ref<Set<string>>(new Set())
 
 const industries = computed(() => summaryStore.industries)
 
@@ -100,7 +103,7 @@ const topRecords = computed(() => {
 })
 
 const emit = defineEmits<{
-  applyInsight: [payload: { type: 'summary' | 'record'; data: any }]
+  toggleInsight: [payload: { type: 'summary' | 'record'; data: any }]
 }>()
 
 function togglePanel() {
@@ -119,23 +122,19 @@ async function loadInsights() {
   }
 }
 
-function handleSelectSummary(summary: any) {
-  selectedInsights.value.add(`summary-${summary.id}`)
-  emit('applyInsight', { type: 'summary', data: summary })
+function handleToggleInsight(insight: any, type: 'summary' | 'record') {
+  emit('toggleInsight', { type, data: insight })
 }
 
-function handleDeselectSummary(summary: any) {
-  selectedInsights.value.delete(`summary-${summary.id}`)
+function handleToggleSummary(insight: any) {
+  handleToggleInsight(insight, 'summary')
 }
 
-function handleSelectRecord(record: any) {
-  selectedInsights.value.add(`record-${record.record_id}`)
-  emit('applyInsight', { type: 'record', data: record })
+function handleToggleRecord(insight: any) {
+  handleToggleInsight(insight, 'record')
 }
 
-function handleDeselectRecord(record: any) {
-  selectedInsights.value.delete(`record-${record.record_id}`)
-}
+const isSelected = (key: string) => props.insightSelections.has(key)
 
 const filteredSummaries = summaries
 const filteredTopRecords = topRecords
