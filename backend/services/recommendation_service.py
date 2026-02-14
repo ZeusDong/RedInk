@@ -116,6 +116,33 @@ class RecommendationServiceV2:
             ON recommendation_cache(updated_at)
         ''')
 
+        # Create semantic scores cache table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS semantic_scores_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                topic TEXT NOT NULL,
+                record_id TEXT NOT NULL,
+                topic_relevance REAL,
+                audience_match REAL,
+                style_fit REAL,
+                performance_bonus REAL,
+                final_score REAL,
+                scored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(topic, record_id)
+            )
+        ''')
+
+        # Create index for semantic cache
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_semantic_cache_topic_record
+            ON semantic_scores_cache(topic, record_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_semantic_cache_scored_at
+            ON semantic_scores_cache(scored_at)
+        ''')
+
         conn.commit()
         logger.debug("[RECOMMEND_V2] Cache DB initialized")
 
@@ -501,6 +528,96 @@ class RecommendationServiceV2:
             return True
         except sqlite3.Error as e:
             logger.warning(f"[RECOMMEND_V2] Cache save error: {e}")
+            return False
+
+    def _get_semantic_scores_batch(
+        self,
+        topic: str,
+        record_ids: List[str]
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Batch get semantic scores from cache.
+
+        Args:
+            topic: Search topic
+            record_ids: List of record IDs to fetch
+
+        Returns:
+            Dict mapping record_id to scores dict
+        """
+        conn = self._get_cache_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Check cache expiry (7 days)
+            cursor.execute('''
+                SELECT record_id, topic_relevance, audience_match, style_fit,
+                       performance_bonus, final_score
+                FROM semantic_scores_cache
+                WHERE topic = ?
+                  AND record_id IN ({})
+                  AND datetime(scored_at) > datetime('now', '-7 days')
+            '''.format(','.join(['?'] * len(record_ids))), [topic] + record_ids)
+
+            rows = cursor.fetchall()
+            results = {}
+            for row in rows:
+                results[row['record_id']] = {
+                    'topic_relevance': row['topic_relevance'],
+                    'audience_match': row['audience_match'],
+                    'style_fit': row['style_fit'],
+                    'performance_bonus': row['performance_bonus'],
+                    'final_score': row['final_score']
+                }
+
+            logger.debug(f"[RECOMMEND_V2] Semantic cache hit: {len(results)}/{len(record_ids)}")
+            return results
+
+        except sqlite3.Error as e:
+            logger.warning(f"[RECOMMEND_V2] Semantic cache read error: {e}")
+            return {}
+
+    def _save_semantic_scores_batch(
+        self,
+        topic: str,
+        scores_data: Dict[str, Dict[str, Any]]
+    ) -> bool:
+        """
+        Batch save semantic scores to cache.
+
+        Args:
+            topic: Search topic
+            scores_data: Dict mapping record_id to scores dict
+
+        Returns:
+            Whether save was successful
+        """
+        conn = self._get_cache_connection()
+        cursor = conn.cursor()
+
+        try:
+            for record_id, scores in scores_data.items():
+                cursor.execute('''
+                    INSERT OR REPLACE INTO semantic_scores_cache
+                    (topic, record_id, topic_relevance, audience_match, style_fit,
+                     performance_bonus, final_score, scored_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (
+                    topic,
+                    record_id,
+                    scores.get('topic_relevance'),
+                    scores.get('audience_match'),
+                    scores.get('style_fit'),
+                    scores.get('performance_bonus'),
+                    scores.get('final_score')
+                ))
+
+            conn.commit()
+            logger.info(f"[RECOMMEND_V2] Saved {len(scores_data)} semantic scores to cache")
+            return True
+
+        except sqlite3.Error as e:
+            logger.warning(f"[RECOMMEND_V2] Semantic cache save error: {e}")
             return False
 
     def _ensure_insights(
