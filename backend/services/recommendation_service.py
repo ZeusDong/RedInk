@@ -38,7 +38,7 @@ class RecommendationServiceV2:
     def __init__(self):
         # 防止重复初始化
         if hasattr(self, '_initialized'):
-            logger.debug("[RECOMMEND_V2] Service already initialized, skipping")
+            logger.debug("[RECOMMEND] Service already initialized, skipping")
             return
         self._initialized = True
 
@@ -47,8 +47,8 @@ class RecommendationServiceV2:
         self.analysis_db_path = self.base_dir / 'analysis' / 'analysis.db'
         self.cache_db_path = self.base_dir / 'analysis' / 'recommendation_cache.db'
 
-        logger.info(f"[RECOMMEND_V2] Analysis DB: {self.analysis_db_path}")
-        logger.info(f"[RECOMMEND_V2] Cache DB: {self.cache_db_path}")
+        logger.debug(f"[RECOMMEND] Analysis DB: {self.analysis_db_path}")
+        logger.debug(f"[RECOMMEND] Cache DB: {self.cache_db_path}")
 
         # 确保目录存在
         self.analysis_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,6 @@ class RecommendationServiceV2:
 
         # 初始化数据库
         self._init_cache_db()
-        logger.info("[RECOMMEND_V2] Service initialized successfully")
 
     def _get_analysis_connection(self) -> sqlite3.Connection:
         """获取分析数据库连接"""
@@ -144,7 +143,7 @@ class RecommendationServiceV2:
         ''')
 
         conn.commit()
-        logger.debug("[RECOMMEND_V2] Cache DB initialized")
+        logger.debug("[RECOMMEND] Cache DB initialized")
 
     def get_recommendations(
         self,
@@ -170,12 +169,12 @@ class RecommendationServiceV2:
             - match_level (基于final_score的等级)
             - recommend_reasons, learnable_elements
         """
-        logger.info(f"[RECOMMEND_V2] Getting recommendations: topic={topic}, industry={industry}, scenario={scenario}")
+        logger.info(f"[RECOMMEND] topic={topic}, filters=industry:{industry},scenario:{scenario}")
 
         # 获取已分析的笔记
         analyzed_records = self._get_analyzed_records()
         if not analyzed_records:
-            logger.warning("[RECOMMEND_V2] No analyzed records found")
+            logger.warning("[RECOMMEND] No analyzed records found")
             return []
 
         # 提取关键词
@@ -185,16 +184,18 @@ class RecommendationServiceV2:
         candidates = self._filter_candidates(analyzed_records, industry, scenario)
 
         if not candidates:
-            logger.warning("[RECOMMEND_V2] No candidates after filtering")
+            logger.warning("[RECOMMEND] No candidates after filtering")
             return []
 
         # 计算每个候选的得分
         scored_results = []
+        passed_threshold = 0
         for record_id, record in candidates.items():
             score_data = self._calculate_score(topic, keywords, record)
 
             # 最低相关性阈值提高到0.3
             if score_data['match_score'] >= 0.3:
+                passed_threshold += 1
                 # 【新增】确保有推荐洞察（懒加载）
                 record = self._ensure_insights(record, topic)
 
@@ -209,12 +210,14 @@ class RecommendationServiceV2:
                 }
                 scored_results.append(result)
 
+        logger.debug(f"[RECOMMEND] Passed threshold: {passed_threshold}/{len(candidates)}")
+
         # 按关键词得分排序，取TOP 30
         scored_results.sort(key=lambda x: x['match_score'], reverse=True)
         top_candidates = scored_results[:30]
 
         if not top_candidates:
-            logger.warning("[RECOMMEND_V2] No candidates after initial filtering")
+            logger.warning("[RECOMMEND] No candidates after threshold filtering")
             return []
 
         # 【新增】AI语义评分阶段
@@ -231,7 +234,7 @@ class RecommendationServiceV2:
 
             # 调用 AI 评分未缓存的候选
             if uncached_candidates:
-                logger.info(f"[RECOMMEND_V2] Requesting AI semantic scoring for {len(uncached_candidates)} uncached candidates")
+                logger.debug(f"[RECOMMEND] AI scoring {len(uncached_candidates)} uncached candidates")
                 ai_scores = self._ai_semantic_scoring(topic, uncached_candidates)
 
                 # 保存到缓存
@@ -241,6 +244,7 @@ class RecommendationServiceV2:
                 cached_scores.update(ai_scores)
 
             # 更新候选的最终得分
+            fallback_count = 0
             for result in top_candidates:
                 record_id = result['record_id']
                 if record_id in cached_scores:
@@ -251,27 +255,31 @@ class RecommendationServiceV2:
                     # 降级：使用关键词匹配分数（转换为0-10分）
                     result['final_score'] = result['match_score'] * 10
                     result['semantic_scores'] = None
+                    fallback_count += 1
+
+            logger.debug(f"[RECOMMEND] AI scored {len(top_candidates) - fallback_count}, fallback {fallback_count}")
 
             # 按最终得分重新排序
             top_candidates.sort(key=lambda x: x['final_score'], reverse=True)
 
             # Update match_level based on final_score
+            level_counts = {'high': 0, 'medium': 0, 'low': 0}
             for result in top_candidates:
                 final_score = result.get('final_score', 0)
                 # Convert 0-10 scale to 0-1 for match_level
                 normalized_score = final_score / 10
-                result['match_level'] = self._calculate_match_level(normalized_score)
-
-            logger.info(f"[RECOMMEND_V2] Re-ranked by AI semantic scores")
+                match_level = self._calculate_match_level(normalized_score)
+                result['match_level'] = match_level
+                level_counts[match_level] += 1
 
         except Exception as e:
             # 降级：使用关键词匹配分数
-            logger.warning(f"[RECOMMEND_V2] Semantic scoring failed, using keyword match scores: {e}")
+            logger.warning(f"[RECOMMEND] Semantic scoring failed, using keyword match scores: {e}")
             for result in top_candidates:
                 result['final_score'] = result['match_score'] * 10
                 result['semantic_scores'] = None
 
-        logger.info(f"[RECOMMEND_V2] Returning {len(top_candidates[:limit])} results")
+        logger.info(f"[RECOMMEND] Returning {min(len(top_candidates), limit)} results (score: {top_candidates[0].get('final_score', 0):.1f} - {top_candidates[-1].get('final_score', 0):.1f})")
         return top_candidates[:limit]
 
     def recommend_similar(
@@ -294,7 +302,7 @@ class RecommendationServiceV2:
 
         target = analyzed_records.get(record_id)
         if not target:
-            logger.warning(f"[RECOMMEND_V2] Record not found: {record_id}")
+            logger.warning(f"[RECOMMEND] Record not found: {record_id}")
             return []
 
         # 基于行业和关键词找相似
@@ -346,7 +354,7 @@ class RecommendationServiceV2:
             ''')
 
             if not cursor.fetchone():
-                logger.warning("[RECOMMEND_V2] analysis_results table not found")
+                logger.warning("[RECOMMEND] analysis_results table not found")
                 return {}
 
             # 获取已分析成功的记录（包含推荐洞察字段）
@@ -388,14 +396,14 @@ class RecommendationServiceV2:
                     record['analyzed_at'] = row['created_at']
                     results[row['record_id']] = record
                 except (json.JSONDecodeError, KeyError) as e:
-                    logger.debug(f"[RECOMMEND_V2] Skipping invalid record: {e}")
+                    logger.debug(f"[RECOMMEND] Skipping invalid record: {e}")
                     continue
 
-            logger.info(f"[RECOMMEND_V2] Loaded {len(results)} analyzed records")
+            logger.debug(f"[RECOMMEND] Loaded {len(results)} analyzed records")
             return results
 
         except sqlite3.Error as e:
-            logger.error(f"[RECOMMEND_V2] Error loading analyzed records: {e}")
+            logger.error(f"[RECOMMEND] Error loading analyzed records: {e}")
             return {}
 
     def _filter_candidates(
@@ -405,10 +413,12 @@ class RecommendationServiceV2:
         scenario: Optional[str]
     ) -> Dict[str, Any]:
         """根据行业和场景筛选候选"""
+        initial_count = len(records)
         candidates = dict(records)
 
         # 行业筛选
         if industry:
+            before_industry = len(candidates)
             candidates = {
                 k: v for k, v in candidates.items()
                 if v.get('industry') == industry
@@ -417,6 +427,7 @@ class RecommendationServiceV2:
         # 场景筛选
         if scenario == 'beginner':
             # 粉丝友好（小粉丝数 + 高互动）
+            before_scenario = len(candidates)
             candidates = {
                 k: v for k, v in candidates.items()
                 if v.get('follower_count', 0) < 10000 and
@@ -425,12 +436,14 @@ class RecommendationServiceV2:
         elif scenario == 'trending':
             # 最近30天发布
             cutoff = (datetime.now() - timedelta(days=30)).isoformat()
+            before_scenario = len(candidates)
             candidates = {
                 k: v for k, v in candidates.items()
                 if v.get('published_at', '') > cutoff
             }
         elif scenario == 'quality':
             # 高收藏比
+            before_scenario = len(candidates)
             candidates = {
                 k: v for k, v in candidates.items()
                 if v.get('metrics', {}).get('save_ratio', 0) > 0.1
@@ -518,11 +531,11 @@ class RecommendationServiceV2:
         # 检查缓存
         cached = self._get_cache(topic, scenario, record_id)
         if cached:
-            logger.debug(f"[RECOMMEND_V2] Cache hit for {record_id}")
+            logger.debug(f"[RECOMMEND] Cache hit for {record_id}")
             return cached
 
         # 缓存未命中，调用 AI 提炼
-        logger.debug(f"[RECOMMEND_V2] Cache miss for {record_id}, calling AI")
+        logger.debug(f"[RECOMMEND] Cache miss for {record_id}, calling AI")
         insights = self._ai_extract_insights(topic, record)
 
         # 保存到缓存
@@ -558,7 +571,7 @@ class RecommendationServiceV2:
                 return json.loads(row['cache_data'])
 
         except sqlite3.Error as e:
-            logger.warning(f"[RECOMMEND_V2] Cache read error: {e}")
+            logger.warning(f"[RECOMMEND] Cache read error: {e}")
 
         return None
 
@@ -589,7 +602,7 @@ class RecommendationServiceV2:
             conn.commit()
             return True
         except sqlite3.Error as e:
-            logger.warning(f"[RECOMMEND_V2] Cache save error: {e}")
+            logger.warning(f"[RECOMMEND] Cache save error: {e}")
             return False
 
     def _get_semantic_scores_batch(
@@ -632,11 +645,10 @@ class RecommendationServiceV2:
                     'final_score': row['final_score']
                 }
 
-            logger.debug(f"[RECOMMEND_V2] Semantic cache hit: {len(results)}/{len(record_ids)}")
             return results
 
         except sqlite3.Error as e:
-            logger.warning(f"[RECOMMEND_V2] Semantic cache read error: {e}")
+            logger.warning(f"[RECOMMEND] Semantic cache read error: {e}")
             return {}
 
     def _save_semantic_scores_batch(
@@ -675,11 +687,10 @@ class RecommendationServiceV2:
                 ))
 
             conn.commit()
-            logger.info(f"[RECOMMEND_V2] Saved {len(scores_data)} semantic scores to cache")
             return True
 
         except sqlite3.Error as e:
-            logger.warning(f"[RECOMMEND_V2] Semantic cache save error: {e}")
+            logger.warning(f"[RECOMMEND] Semantic cache save error: {e}")
             return False
 
     def _ai_semantic_scoring(
@@ -702,8 +713,11 @@ class RecommendationServiceV2:
         """
         from backend.utils.text_client import get_text_chat_client
         from backend.config import Config
-
-        logger.info(f"[RECOMMEND_V2] Calling AI semantic scoring for {len(candidates)} candidates")
+        from backend.prompts.recommendation_prompts import (
+            format_semantic_scoring_prompt,
+            parse_semantic_scoring_response,
+            calculate_final_score
+        )
 
         try:
             # Get text client
@@ -728,11 +742,11 @@ class RecommendationServiceV2:
             for record_id, scores in scores_by_id.items():
                 scores['final_score'] = calculate_final_score(scores)
 
-            logger.info(f"[RECOMMEND_V2] AI semantic scoring completed for {len(scores_by_id)} candidates")
+            logger.info(f"[RECOMMEND] AI scored {len(scores_by_id)} candidates successfully")
             return scores_by_id
 
         except Exception as e:
-            logger.error(f"[RECOMMEND_V2] AI semantic scoring failed: {e}")
+            logger.error(f"[RECOMMEND] AI semantic scoring failed: {e}")
             raise  # Re-raise for caller to handle fallback
 
     def _ensure_insights(
@@ -759,7 +773,7 @@ class RecommendationServiceV2:
             return record
 
         record_id = record.get('record_id', '')
-        logger.info(f"[RECOMMEND_V2] Missing insights for {record_id}, lazy loading...")
+        logger.debug(f"[RECOMMEND] Lazy loading insights for {record_id}")
 
         try:
             # 调用 AI 生成推荐洞察
@@ -774,11 +788,10 @@ class RecommendationServiceV2:
             # 保存到数据库（下次直接查询）
             self._save_insights_to_db(record_id, insights)
 
-            logger.info(f"[RECOMMEND_V2] Lazy loaded insights for {record_id}")
             return record
 
         except Exception as e:
-            logger.warning(f"[RECOMMEND_V2] Failed to lazy load insights for {record_id}: {e}")
+            logger.warning(f"[RECOMMEND] Failed to lazy load insights for {record_id}: {e}")
 
             # 降级：使用默认值
             if not has_reasons:
@@ -829,7 +842,7 @@ class RecommendationServiceV2:
             conn.commit()
             return True
         except sqlite3.Error as e:
-            logger.warning(f"[RECOMMEND_V2] Failed to save insights to DB: {e}")
+            logger.warning(f"[RECOMMEND] Failed to save insights to DB: {e}")
             return False
 
     def _ai_extract_insights(
@@ -858,9 +871,11 @@ class RecommendationServiceV2:
         )
 
         analysis_content = record.get('analysis_content', '')
+        record_id = record.get('record_id', 'unknown')
 
         if not analysis_content:
             # 没有分析内容，返回默认结果
+            logger.warning(f"[RECOMMEND] No analysis_content for {record_id}, using default insights")
             return {
                 'recommend_reasons': ['优质内容，值得学习'],
                 'learnable_elements': {
@@ -895,11 +910,10 @@ class RecommendationServiceV2:
             insights = parse_insights_response(response)
             insights['extracted_at'] = datetime.now().isoformat()
 
-            logger.info(f"[RECOMMEND_V2] AI extraction successful for {record.get('record_id')}")
             return insights
 
         except Exception as e:
-            logger.warning(f"[RECOMMEND_V2] AI extraction failed: {e}, using fallback")
+            logger.warning(f"[RECOMMEND] AI extraction failed for {record_id}: {e}")
 
             # 降级策略
             return {
@@ -970,11 +984,11 @@ class RecommendationServiceV2:
 
             conn.commit()
             cleared = cursor.rowcount
-            logger.info(f"[RECOMMEND_V2] Cleared {cleared} cache entries (target={target})")
+            logger.info(f"[RECOMMEND] Cleared {cleared} cache entries (target={target})")
             return cleared
 
         except sqlite3.Error as e:
-            logger.error(f"[RECOMMEND_V2] Cache clear error: {e}")
+            logger.error(f"[RECOMMEND] Cache clear error: {e}")
             return 0
 
     def get_cache_stats(self) -> Dict[str, Any]:
@@ -1004,7 +1018,7 @@ class RecommendationServiceV2:
             }
 
         except sqlite3.Error as e:
-            logger.error(f"[RECOMMEND_V2] Cache stats error: {e}")
+            logger.error(f"[RECOMMEND] Cache stats error: {e}")
             return {'total_entries': 0, 'expired_entries': 0}
 
 

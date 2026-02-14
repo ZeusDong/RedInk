@@ -338,7 +338,7 @@ def format_semantic_scoring_prompt(topic: str, candidates: List[Dict[str, Any]])
     Returns:
         Formatted prompt string
     """
-    # Build candidate summary list
+    # Build candidate summary list with rich context
     candidate_lines = []
     for i, cand in enumerate(candidates, 1):
         record_id = cand.get('record_id', '')
@@ -347,13 +347,31 @@ def format_semantic_scoring_prompt(topic: str, candidates: List[Dict[str, Any]])
         metrics = cand.get('metrics', {})
         engagement = metrics.get('total_engagement', 0)
 
-        # Extract keywords from title for context
-        title_keywords = cand.get('title', '')[:30]
+        # Get insights for better context
+        recommend_reasons = cand.get('recommend_reasons', [])
+        learnable_elements = cand.get('learnable_elements', {})
 
-        line = f"{i}. record_id: {record_id} | 标题: {title} | 行业: {industry} | 互动量: {engagement} | 关键词: {title_keywords}"
+        # Format insights
+        reasons_text = '; '.join(recommend_reasons[:2]) if recommend_reasons else '无'
+
+        elements_list = []
+        for key in ['目标受众', '内容结构', '视觉风格', '互动设计', '核心卖点', '学习要点']:
+            val = learnable_elements.get(key, '')
+            if val:
+                elements_list.append(f"{key}:{val}")
+
+        elements_text = '; '.join(elements_list) if elements_list else '无'
+
+        line = (
+            f"{i}. record_id: {record_id}\n"
+            f"   标题: {title}\n"
+            f"   行业: {industry} | 互动量: {engagement}\n"
+            f"   推荐理由: {reasons_text}\n"
+            f"   学习要点: {elements_text}"
+        )
         candidate_lines.append(line)
 
-    candidates_text = "\n".join(candidate_lines)
+    candidates_text = "\n\n".join(candidate_lines)
 
     return SEMANTIC_SCORING_PROMPT.format(topic=topic, candidates=candidates_text)
 
