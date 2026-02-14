@@ -8,6 +8,7 @@ import SettingsView from '../views/SettingsView.vue'
 import ReferenceView from '../views/ReferenceView.vue'
 import AnalysisView from '../views/AnalysisView.vue'
 import SummaryView from '../views/SummaryView.vue'
+import AICreationView from '../views/AICreationView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -61,6 +62,36 @@ const router = createRouter({
       path: '/settings',
       name: 'settings',
       component: SettingsView
+    },
+    {
+      path: '/ai-creation',
+      component: AICreationView,
+      children: [
+        {
+          path: '',
+          redirect: '/ai-creation/create'
+        },
+        {
+          path: 'create',
+          name: 'QuickCreate',
+          component: () => import('@/components/ai-creation/quick-create/QuickCreatePage.vue')
+        },
+        {
+          path: 'recommend',
+          name: 'SmartRecommend',
+          component: () => import('@/components/ai-creation/smart-recommend/SmartRecommendPage.vue')
+        },
+        {
+          path: 'templates',
+          name: 'TemplateLibrary',
+          component: () => import('@/components/ai-creation/template-library/TemplateLibraryPage.vue')
+        },
+        {
+          path: 'optimize',
+          name: 'ContentOptimize',
+          component: () => import('@/components/ai-creation/content-optimize/ContentOptimizePage.vue')
+        }
+      ]
     }
   ]
 })

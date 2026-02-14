@@ -43,6 +43,9 @@ def create_api_blueprint():
     from .oauth_routes import create_oauth_blueprint
     from .image_proxy_routes import create_image_proxy_blueprint
     from .summary_routes import create_summary_blueprint
+    from .recommendation_routes import create_recommendation_blueprint
+    from .template_routes import create_template_blueprint
+    from .optimizer_routes import create_optimizer_blueprint
 
     # 显式捕获 analysis_routes 导入错误
     try:
@@ -76,6 +79,12 @@ def create_api_blueprint():
     logger.debug("   ✅ image_proxy_routes registered")
     api_bp.register_blueprint(create_summary_blueprint())
     logger.debug("   ✅ summary_routes registered")
+    api_bp.register_blueprint(create_recommendation_blueprint())
+    logger.debug("   ✅ recommendation_routes registered")
+    api_bp.register_blueprint(create_template_blueprint())
+    logger.debug("   ✅ template_routes registered")
+    api_bp.register_blueprint(create_optimizer_blueprint())
+    logger.debug("   ✅ optimizer_routes registered")
 
     # 显式捕获 analysis_routes 蓝图创建错误
     try:
