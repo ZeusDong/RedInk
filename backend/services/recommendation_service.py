@@ -23,29 +23,129 @@ class RecommendationService:
         初始化推荐服务
 
         Args:
-            reference_db_path: 对标数据库路径，默认使用 data/reference.json
+            reference_db_path: 已废弃，保留参数兼容性。实际从reference_cache/加载
         """
-        if reference_db_path is None:
-            # 默认对标数据路径
-            reference_db_path = Path(__file__).parent.parent.parent / 'data' / 'reference.json'
-
-        self.reference_db_path = Path(reference_db_path)
+        # 尝试多个数据源
         self.reference_db: Dict[str, Any] = {}
         self._load_reference_db()
 
     def _load_reference_db(self):
-        """加载对标数据"""
-        try:
-            if self.reference_db_path.exists():
-                with open(self.reference_db_path, 'r', encoding='utf-8') as f:
-                    self.reference_db = json.load(f)
-                logger.info(f"✅ 加载了 {len(self.reference_db)} 条对标记录")
-            else:
-                logger.warning(f"⚠️  对标数据文件不存在: {self.reference_db_path}")
-                self.reference_db = {}
-        except Exception as e:
-            logger.error(f"❌ 加载对标数据失败: {e}")
-            self.reference_db = {}
+        """从reference_cache目录加载对标数据"""
+        # 尝试的缓存文件路径
+        cache_dir = Path(__file__).parent.parent.parent / 'reference_cache'
+        cache_files = [
+            cache_dir / 'default_cache.json',
+            cache_dir / 'xhsKeywordSearch_cache.json'
+        ]
+
+        for cache_path in cache_files:
+            if cache_path.exists():
+                try:
+                    self._load_cache_file(cache_path)
+                except Exception as e:
+                    logger.warning(f"⚠️  加载 {cache_path.name} 失败: {e}")
+                    continue
+
+        if self.reference_db:
+            logger.info(f"✅ 加载了 {len(self.reference_db)} 条对标记录")
+        else:
+            logger.warning(f"⚠️  未找到任何缓存数据，搜索功能不可用")
+
+    def _load_cache_file(self, cache_path: Path):
+        """
+        加载单个缓存文件并转换格式
+
+        缓存格式: {"records": [{"fields": {...}, ...}]}
+        目标格式: {record_id: {title, body, industry, metrics, ...}}
+        """
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            cache_data = json.load(f)
+
+        records = cache_data.get('records', [])
+        for record in records:
+            try:
+                # 转换缓存格式到推荐服务格式
+                converted = self._convert_cache_record(record.get('fields', {}))
+                if converted and 'record_id' in converted:
+                    self.reference_db[converted['record_id']] = converted
+            except Exception as e:
+                logger.debug(f"跳过无效记录: {e}")
+                continue
+
+    def _convert_cache_record(self, fields: Dict) -> Optional[Dict[str, Any]]:
+        """将缓存字段转换为推荐服务格式"""
+        # 辅助函数：提取字段的text值
+        def get_text(field_name: str, default: str = '') -> str:
+            field = fields.get(field_name, [])
+            if isinstance(field, list) and len(field) > 0:
+                item = field[0]
+                if isinstance(item, dict):
+                    return item.get('text', default)
+            return default
+
+        # 辅助函数：提取数值
+        def get_int(field_name: str, default: int = 0) -> int:
+            value = fields.get(field_name, default)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, list) and len(value) > 0:
+                return int(value[0]) if value[0] is not None else default
+            return default
+
+        # 提取record_id
+        record_id = get_text('record_id')
+        if not record_id:
+            return None
+
+        # 提取标题
+        title = get_text('标题')
+
+        # 提取正文
+        body = get_text('正文')
+
+        # 提取封面图
+        cover_url = get_text('封面图片链接') or get_text('笔记封面')
+
+        # 提取行业/关键词
+        industry = get_text('关键词')
+
+        # 提取互动数据
+        likes = get_int('点赞数')
+        saves = get_int('收藏数')
+        comments = get_int('评论数')
+        total_engagement = get_int('总互动量', likes + saves + comments)
+
+        # 提取粉丝数
+        follower_count = get_int('博主粉丝数')
+
+        # 计算收藏比
+        save_ratio = saves / total_engagement if total_engagement > 0 else 0
+
+        # 提取发布时间
+        published_at = fields.get('发布时间', '')
+
+        # 提取笔记类型
+        note_type = get_text('笔记类型') or get_text('笔记分类')
+
+        return {
+            'record_id': record_id,
+            'title': title,
+            'body': body,
+            'cover_url': cover_url,
+            'industry': industry,
+            'note_type': note_type,
+            'metrics': {
+                'likes': likes,
+                'saves': saves,
+                'comments': comments,
+                'total_engagement': total_engagement,
+                'save_ratio': save_ratio
+            },
+            'published_at': published_at,
+            'follower_count': follower_count,
+            # 保留原始字段用于调试
+            '_raw_fields': fields
+        }
 
     def get_recommendations(
         self,
