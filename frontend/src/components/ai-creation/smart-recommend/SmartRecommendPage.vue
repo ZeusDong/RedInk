@@ -19,22 +19,26 @@ import { useRouter } from 'vue-router'
 import { useRecommendationStore } from '@/stores/recommendation'
 import RecommendInput from './RecommendInput.vue'
 import RecommendResult from './RecommendResult.vue'
+import type { ScenarioType } from '@/types/recommendation'
 
 const router = useRouter()
 const recommendationStore = useRecommendationStore()
 
-async function handleSearch(topic: string, scenario?: string) {
-  await recommendationStore.fetchRecommendations(topic, { scenario })
+async function handleSearch(topic: string, scenario?: ScenarioType) {
+  await recommendationStore.fetchRecommendations(topic, {
+    scenario,
+    limit: 20
+  })
 }
 
-function handleViewDetail(record: any) {
-  router.push({ name: 'reference', query: { id: record.record_id } })
+function handleViewDetail(recordId: string) {
+  router.push({ name: 'reference', query: { id: recordId } })
 }
 
-function handleApply(record: any) {
+function handleApply(recordId: string) {
   router.push({
     name: 'QuickCreate',
-    query: { reference: record.record_id }
+    query: { reference: recordId }
   })
 }
 </script>

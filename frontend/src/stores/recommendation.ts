@@ -1,7 +1,19 @@
 // frontend/src/stores/recommendation.ts
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import type {
+  RecommendationItem,
+  RecommendationRequest,
+  ScenarioType,
+  ClearCacheRequest,
+  ClearCacheResponse,
+  CacheStatsResponse
+} from '@/types/recommendation'
 
+/**
+ * 向后兼容的接口定义
+ * @deprecated 使用 RecommendationItem 代替
+ */
 export interface ReferenceRecord {
   record_id: string
   title: string
@@ -16,7 +28,11 @@ export interface ReferenceRecord {
   }
 }
 
-export interface RecommendationItem {
+/**
+ * 向后兼容的接口定义
+ * @deprecated 使用 RecommendationItem 代替
+ */
+export interface LegacyRecommendationItem {
   record: ReferenceRecord
   match_score: number
   reasons?: string[]
@@ -27,6 +43,7 @@ export interface RecommendationState {
   loading: boolean
   searchTopic: string
   industries: string[]
+  lastSearchTime: Date | null
 }
 
 export const useRecommendationStore = defineStore('recommendation', () => {
@@ -35,40 +52,52 @@ export const useRecommendationStore = defineStore('recommendation', () => {
   const loading = ref(false)
   const searchTopic = ref('')
   const industries = ref<string[]>([])
+  const lastSearchTime = ref<Date | null>(null)
 
   // Getters
   const hasRecommendations = computed(() => recommendations.value.length > 0)
   const recommendationsCount = computed(() => recommendations.value.length)
 
   // Actions
+  /**
+   * 获取智能推荐列表 (V2 API)
+   */
   async function fetchRecommendations(topic: string, options?: {
     industry?: string
-    scenario?: string
+    scenario?: ScenarioType
     limit?: number
   }) {
     loading.value = true
     searchTopic.value = topic
+    lastSearchTime.value = new Date()
 
     try {
-      const response = await fetch('/api/recommend', {
+      const requestBody: RecommendationRequest = {
+        topic,
+        limit: options?.limit || 20
+      }
+
+      if (options?.industry) requestBody.industry = options.industry
+      if (options?.scenario) requestBody.scenario = options.scenario
+
+      const response = await fetch('/api/recommendations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic,
-          industry: options?.industry,
-          scenario: options?.scenario,
-          limit: options?.limit || 20
-        })
+        body: JSON.stringify(requestBody)
       })
 
       const data = await response.json()
-      if (data.success) {
-        recommendations.value = data.data || []
+      if (data.success && data.data) {
+        recommendations.value = data.data.results || []
       } else {
         console.error('获取推荐失败:', data.error)
+        // Handle specific error codes
+        if (data.error_code === 'NO_ANALYZED_RECORDS') {
+          console.warn('还没有可推荐的内容，请先进行对标分析')
+        }
         recommendations.value = []
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('获取推荐异常:', error)
       recommendations.value = []
     } finally {
@@ -85,6 +114,45 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       }
     } catch (error) {
       console.error('获取行业列表失败:', error)
+    }
+  }
+
+  /**
+   * 清除缓存
+   */
+  async function clearCache(options: ClearCacheRequest): Promise<ClearCacheResponse> {
+    try {
+      const response = await fetch('/api/recommendations/cache', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(options)
+      })
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('清除缓存失败:', error)
+      return { success: false, data: { cleared_count: 0 } }
+    }
+  }
+
+  /**
+   * 获取缓存统计
+   */
+  async function getCacheStats(): Promise<CacheStatsResponse> {
+    try {
+      const response = await fetch('/api/recommendations/cache/stats')
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('获取缓存统计失败:', error)
+      return {
+        success: false,
+        data: {
+          total_entries: 0,
+          expired_entries: 0
+        }
+      }
     }
   }
 
@@ -112,6 +180,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     loading,
     searchTopic,
     industries,
+    lastSearchTime,
     // Getters
     hasRecommendations,
     recommendationsCount,
@@ -119,6 +188,8 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     fetchRecommendations,
     fetchIndustries,
     fetchSimilarRecommendations,
-    clearRecommendations
+    clearRecommendations,
+    clearCache,
+    getCacheStats
   }
 })

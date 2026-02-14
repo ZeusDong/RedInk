@@ -1,151 +1,123 @@
 """
-推荐服务 - 基于主题推荐相关的对标笔记
+智能推荐服务 V2.0
 
-功能：
-- 根据主题关键词推荐相关对标笔记
-- 支持场景筛选（新手入门、追热点、提升质量）
-- 多维度打分（行业匹配、关键词匹配、数据表现、内容相似度）
+基于AI分析的笔记推荐系统，只推荐已分析的高质量笔记
+
+主要改进：
+- 数据源：从 analysis.db 获取已分析笔记
+- 质量控制：只推荐 AI 分析成功的笔记
+- AI提炼：提取可学习的结构化元素
+- 缓存机制：缓存 AI 提炼结果，提升性能
+- 响应增强：推荐理由 + 可学元素 + 匹配等级
 """
 
-import logging
-from typing import List, Dict, Any, Optional
-from pathlib import Path
 import json
+import logging
+import sqlite3
+import threading
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
 
-class RecommendationService:
-    """推荐服务"""
+class RecommendationServiceV2:
+    """智能推荐服务 V2.0"""
 
-    def __init__(self, reference_db_path: Optional[str] = None):
-        """
-        初始化推荐服务
+    _instance = None
+    _lock = threading.Lock()
 
-        Args:
-            reference_db_path: 已废弃，保留参数兼容性。实际从reference_cache/加载
-        """
-        # 尝试多个数据源
-        self.reference_db: Dict[str, Any] = {}
-        self._load_reference_db()
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
 
-    def _load_reference_db(self):
-        """从reference_cache目录加载对标数据"""
-        # 尝试的缓存文件路径
-        cache_dir = Path(__file__).parent.parent.parent / 'reference_cache'
-        cache_files = [
-            cache_dir / 'default_cache.json',
-            cache_dir / 'xhsKeywordSearch_cache.json'
-        ]
+    def __init__(self):
+        # 防止重复初始化
+        if hasattr(self, '_initialized'):
+            logger.debug("[RECOMMEND_V2] Service already initialized, skipping")
+            return
+        self._initialized = True
 
-        for cache_path in cache_files:
-            if cache_path.exists():
-                try:
-                    self._load_cache_file(cache_path)
-                except Exception as e:
-                    logger.warning(f"⚠️  加载 {cache_path.name} 失败: {e}")
-                    continue
+        # 数据库路径
+        self.base_dir = Path(__file__).parent.parent.parent
+        self.analysis_db_path = self.base_dir / 'analysis' / 'analysis.db'
+        self.cache_db_path = self.base_dir / 'analysis' / 'recommendation_cache.db'
 
-        if self.reference_db:
-            logger.info(f"✅ 加载了 {len(self.reference_db)} 条对标记录")
-        else:
-            logger.warning(f"⚠️  未找到任何缓存数据，搜索功能不可用")
+        logger.info(f"[RECOMMEND_V2] Analysis DB: {self.analysis_db_path}")
+        logger.info(f"[RECOMMEND_V2] Cache DB: {self.cache_db_path}")
 
-    def _load_cache_file(self, cache_path: Path):
-        """
-        加载单个缓存文件并转换格式
+        # 确保目录存在
+        self.analysis_db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        缓存格式: {"records": [{"fields": {...}, ...}]}
-        目标格式: {record_id: {title, body, industry, metrics, ...}}
-        """
-        with open(cache_path, 'r', encoding='utf-8') as f:
-            cache_data = json.load(f)
+        # 使用线程本地存储连接
+        self._local = threading.local()
+        self._cache_local = threading.local()
 
-        records = cache_data.get('records', [])
-        for record in records:
-            try:
-                # 转换缓存格式到推荐服务格式
-                converted = self._convert_cache_record(record.get('fields', {}))
-                if converted and 'record_id' in converted:
-                    self.reference_db[converted['record_id']] = converted
-            except Exception as e:
-                logger.debug(f"跳过无效记录: {e}")
-                continue
+        # 初始化数据库
+        self._init_cache_db()
+        logger.info("[RECOMMEND_V2] Service initialized successfully")
 
-    def _convert_cache_record(self, fields: Dict) -> Optional[Dict[str, Any]]:
-        """将缓存字段转换为推荐服务格式"""
-        # 辅助函数：提取字段的text值
-        def get_text(field_name: str, default: str = '') -> str:
-            field = fields.get(field_name, [])
-            if isinstance(field, list) and len(field) > 0:
-                item = field[0]
-                if isinstance(item, dict):
-                    return item.get('text', default)
-            return default
+    def _get_analysis_connection(self) -> sqlite3.Connection:
+        """获取分析数据库连接"""
+        if not hasattr(self._local, 'conn'):
+            self._local.conn = sqlite3.connect(
+                str(self.analysis_db_path),
+                check_same_thread=False
+            )
+            self._local.conn.row_factory = sqlite3.Row
+        return self._local.conn
 
-        # 辅助函数：提取数值
-        def get_int(field_name: str, default: int = 0) -> int:
-            value = fields.get(field_name, default)
-            if isinstance(value, int):
-                return value
-            if isinstance(value, list) and len(value) > 0:
-                return int(value[0]) if value[0] is not None else default
-            return default
+    def _get_cache_connection(self) -> sqlite3.Connection:
+        """获取缓存数据库连接"""
+        if not hasattr(self._cache_local, 'conn'):
+            self._cache_local.conn = sqlite3.connect(
+                str(self.cache_db_path),
+                check_same_thread=False
+            )
+            self._cache_local.conn.row_factory = sqlite3.Row
+        return self._cache_local.conn
 
-        # 提取record_id
-        record_id = get_text('record_id')
-        if not record_id:
-            return None
+    def _init_cache_db(self):
+        """初始化缓存数据库"""
+        conn = self._get_cache_connection()
+        cursor = conn.cursor()
 
-        # 提取标题
-        title = get_text('标题')
+        # 创建推荐缓存表
+        # 注意：UNIQUE 约束由应用层通过 INSERT OR REPLACE 处理
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS recommendation_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                topic TEXT NOT NULL,
+                scenario TEXT,
+                record_id TEXT NOT NULL,
+                cache_data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
 
-        # 提取正文
-        body = get_text('正文')
+        # 创建索引
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_rec_cache_topic_scenario
+            ON recommendation_cache(topic, scenario)
+        ''')
 
-        # 提取封面图
-        cover_url = get_text('封面图片链接') or get_text('笔记封面')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_rec_cache_record_id
+            ON recommendation_cache(record_id)
+        ''')
 
-        # 提取行业/关键词
-        industry = get_text('关键词')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_rec_cache_updated_at
+            ON recommendation_cache(updated_at)
+        ''')
 
-        # 提取互动数据
-        likes = get_int('点赞数')
-        saves = get_int('收藏数')
-        comments = get_int('评论数')
-        total_engagement = get_int('总互动量', likes + saves + comments)
-
-        # 提取粉丝数
-        follower_count = get_int('博主粉丝数')
-
-        # 计算收藏比
-        save_ratio = saves / total_engagement if total_engagement > 0 else 0
-
-        # 提取发布时间
-        published_at = fields.get('发布时间', '')
-
-        # 提取笔记类型
-        note_type = get_text('笔记类型') or get_text('笔记分类')
-
-        return {
-            'record_id': record_id,
-            'title': title,
-            'body': body,
-            'cover_url': cover_url,
-            'industry': industry,
-            'note_type': note_type,
-            'metrics': {
-                'likes': likes,
-                'saves': saves,
-                'comments': comments,
-                'total_engagement': total_engagement,
-                'save_ratio': save_ratio
-            },
-            'published_at': published_at,
-            'follower_count': follower_count,
-            # 保留原始字段用于调试
-            '_raw_fields': fields
-        }
+        conn.commit()
+        logger.debug("[RECOMMEND_V2] Cache DB initialized")
 
     def get_recommendations(
         self,
@@ -155,33 +127,62 @@ class RecommendationService:
         limit: int = 20
     ) -> List[Dict[str, Any]]:
         """
-        获取推荐列表
+        获取推荐列表 V2.0
 
         Args:
             topic: 搜索主题
             industry: 行业筛选
-            scenario: 场景筛选 (beginner/trending/quality)
+            scenario: 场景筛选 (beginner|trending|quality)
             limit: 返回数量限制
 
         Returns:
-            推荐结果列表
+            推荐结果列表，每个结果包含:
+            - record_id, record, match_score
+            - recommend_reasons, learnable_elements, match_level
         """
+        logger.info(f"[RECOMMEND_V2] Getting recommendations: topic={topic}, industry={industry}, scenario={scenario}")
+
+        # 获取已分析的笔记
+        analyzed_records = self._get_analyzed_records()
+        if not analyzed_records:
+            logger.warning("[RECOMMEND_V2] No analyzed records found")
+            return []
+
         # 提取关键词
         keywords = self._extract_keywords(topic)
 
         # 获取候选记录
-        candidates = self._get_candidates(industry, scenario)
+        candidates = self._filter_candidates(analyzed_records, industry, scenario)
+
+        if not candidates:
+            logger.warning("[RECOMMEND_V2] No candidates after filtering")
+            return []
 
         # 计算每个候选的得分
         scored_results = []
         for record_id, record in candidates.items():
-            score_data = self._calculate_score(topic, keywords, record, scenario)
-            if score_data['match_score'] > 0.1:  # 最低相关性阈值
-                scored_results.append(score_data)
+            score_data = self._calculate_score(topic, keywords, record)
+
+            # 最低相关性阈值提高到0.3
+            if score_data['match_score'] >= 0.3:
+                # 获取或生成洞察（带缓存）
+                insights = self._get_insights_with_cache(topic, record)
+
+                # 构建结果
+                result = {
+                    'record_id': record_id,
+                    'record': record,
+                    'match_score': score_data['match_score'],
+                    'match_level': self._calculate_match_level(score_data['match_score']),
+                    'recommend_reasons': insights.get('recommend_reasons', []),
+                    'learnable_elements': insights.get('learnable_elements', {})
+                }
+                scored_results.append(result)
 
         # 按得分排序
         scored_results.sort(key=lambda x: x['match_score'], reverse=True)
 
+        logger.info(f"[RECOMMEND_V2] Returning {len(scored_results[:limit])} results")
         return scored_results[:limit]
 
     def recommend_similar(
@@ -199,16 +200,19 @@ class RecommendationService:
         Returns:
             相似推荐列表
         """
-        target = self.reference_db.get(record_id)
+        # 获取已分析的笔记
+        analyzed_records = self._get_analyzed_records()
+
+        target = analyzed_records.get(record_id)
         if not target:
-            logger.warning(f"⚠️  找不到记录: {record_id}")
+            logger.warning(f"[RECOMMEND_V2] Record not found: {record_id}")
             return []
 
-        # 简化实现：基于行业和关键词
+        # 基于行业和关键词找相似
         industry = target.get('industry')
         keywords = self._extract_keywords(target.get('title', ''))
 
-        candidates = self._get_candidates(industry, None)
+        candidates = self._filter_candidates(analyzed_records, industry, None)
 
         scored = []
         for rid, record in candidates.items():
@@ -217,28 +221,83 @@ class RecommendationService:
 
             # 计算相似度
             similarity = 0.0
-            for kw in keywords[:5]:  # 只用前5个关键词
+            for kw in keywords[:5]:
                 if kw in record.get('title', '').lower():
                     similarity += 0.2
 
             if similarity > 0:
+                match_score = round(min(similarity, 1.0), 2)
                 scored.append({
                     'record_id': rid,
                     'record': record,
-                    'match_score': round(min(similarity, 1.0), 2),
-                    'reasons': ['similarity']
+                    'match_score': match_score,
+                    'match_level': self._calculate_match_level(match_score),
+                    'recommend_reasons': ['内容相似'],
+                    'learnable_elements': {}
                 })
 
         scored.sort(key=lambda x: x['match_score'], reverse=True)
         return scored[:limit]
 
-    def _get_candidates(
+    def _get_analyzed_records(self) -> Dict[str, Any]:
+        """
+        从 analysis.db 获取已分析成功的笔记
+
+        Returns:
+            {record_id: record_dict} 的字典
+        """
+        conn = self._get_analysis_connection()
+        cursor = conn.cursor()
+
+        try:
+            # 检查 analysis_results 表是否存在
+            cursor.execute('''
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='analysis_results'
+            ''')
+
+            if not cursor.fetchone():
+                logger.warning("[RECOMMEND_V2] analysis_results table not found")
+                return {}
+
+            # 只获取已分析成功的记录
+            cursor.execute('''
+                SELECT ar.record_id, ar.content, ar.created_at, pn.data
+                FROM analysis_results ar
+                INNER JOIN pending_notes pn ON ar.record_id = pn.record_id
+                WHERE ar.analyzed = 1
+                ORDER BY ar.updated_at DESC
+            ''')
+
+            rows = cursor.fetchall()
+            results = {}
+
+            for row in rows:
+                try:
+                    record = json.loads(row['data'])
+                    # 添加分析内容
+                    record['analysis_content'] = row['content']
+                    record['analyzed_at'] = row['created_at']
+                    results[row['record_id']] = record
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.debug(f"[RECOMMEND_V2] Skipping invalid record: {e}")
+                    continue
+
+            logger.info(f"[RECOMMEND_V2] Loaded {len(results)} analyzed records")
+            return results
+
+        except sqlite3.Error as e:
+            logger.error(f"[RECOMMEND_V2] Error loading analyzed records: {e}")
+            return {}
+
+    def _filter_candidates(
         self,
+        records: Dict[str, Any],
         industry: Optional[str],
         scenario: Optional[str]
     ) -> Dict[str, Any]:
-        """获取候选记录"""
-        candidates = dict(self.reference_db)
+        """根据行业和场景筛选候选"""
+        candidates = dict(records)
 
         # 行业筛选
         if industry:
@@ -257,7 +316,6 @@ class RecommendationService:
             }
         elif scenario == 'trending':
             # 最近30天发布
-            from datetime import datetime, timedelta
             cutoff = (datetime.now() - timedelta(days=30)).isoformat()
             candidates = {
                 k: v for k, v in candidates.items()
@@ -272,70 +330,40 @@ class RecommendationService:
 
         return candidates
 
-    def _extract_keywords(self, text: str) -> List[str]:
-        """提取关键词（简单实现，可升级为 NLP）"""
-        # 停用词
-        stopwords = {'的', '了', '是', '在', '有', '和', '与', '等', '一', '个', '怎么', '如何'}
-
-        # 简单分词（按2-4字切分）
-        words = []
-        text_lower = text.lower()
-        for i in range(len(text_lower)):
-            for length in [2, 3, 4]:
-                if i + length <= len(text_lower):
-                    word = text_lower[i:i+length]
-                    if word not in stopwords and word.strip():
-                        words.append(word)
-
-        # 统计词频
-        from collections import Counter
-        word_count = Counter(words)
-
-        # 返回前10个高频词
-        return [w for w, c in word_count.most_common(10)]
-
     def _calculate_score(
         self,
         topic: str,
         keywords: List[str],
-        record: Dict,
-        scenario: Optional[str]
+        record: Dict
     ) -> Dict[str, Any]:
-        """计算推荐得分"""
+        """计算匹配得分"""
         scores = {
             'industry': 0.0,
             'keyword': 0.0,
             'performance': 0.0,
             'similarity': 0.0
         }
-        reasons = []
 
-        # 行业匹配 (30%)
+        # 行业匹配 (25%)
         if record.get('industry'):
-            scores['industry'] = 0.3
-            reasons.append('industry')
+            scores['industry'] = 0.25
 
-        # 关键词匹配 (30%)
+        # 关键词匹配 (35%)
         title = record.get('title', '').lower()
-        body = record.get('body', '').lower()
+        body = record.get('content', '').lower()
         keyword_hits = 0
         for kw in keywords:
             if kw in title or kw in body:
                 keyword_hits += 1
         if keywords:
-            scores['keyword'] = min((keyword_hits / len(keywords)) * 0.3, 0.3)
-        if keyword_hits > 0:
-            reasons.append('keyword')
+            scores['keyword'] = min((keyword_hits / len(keywords)) * 0.35, 0.35)
 
         # 数据表现 (20%)
         metrics = record.get('metrics', {})
         engagement = metrics.get('total_engagement', 0)
-        # 归一化：假设10000互动为满分
         scores['performance'] = min(engagement / 10000 * 0.2, 0.2)
-        if engagement > 5000:
-            reasons.append('trending')
 
-        # 内容相似度 (20%) - 简化实现
+        # 内容相似度 (20%)
         topic_lower = topic.lower()
         similarity = 0.0
         if topic_lower in title:
@@ -345,24 +373,310 @@ class RecommendationService:
         scores['similarity'] = similarity
 
         # 总分
-        total_score = sum(scores.values())
+        total_score = round(sum(scores.values()), 2)
 
         return {
-            'record_id': record.get('record_id', ''),
-            'record': record,
-            'match_score': round(total_score, 2),
-            'reasons': reasons,
+            'match_score': total_score,
             'scores': scores
         }
 
+    def _calculate_match_level(self, score: float) -> str:
+        """计算匹配等级"""
+        if score >= 0.7:
+            return 'high'
+        elif score >= 0.4:
+            return 'medium'
+        else:
+            return 'low'
+
+    def _get_insights_with_cache(
+        self,
+        topic: str,
+        record: Dict
+    ) -> Dict[str, Any]:
+        """
+        获取或生成AI提炼（带缓存）
+
+        Args:
+            topic: 搜索主题
+            record: 记录数据
+
+        Returns:
+            {recommend_reasons, learnable_elements}
+        """
+        record_id = record.get('record_id', '')
+        scenario = None  # 可以从请求中获取
+
+        # 检查缓存
+        cached = self._get_cache(topic, scenario, record_id)
+        if cached:
+            logger.debug(f"[RECOMMEND_V2] Cache hit for {record_id}")
+            return cached
+
+        # 缓存未命中，调用 AI 提炼
+        logger.debug(f"[RECOMMEND_V2] Cache miss for {record_id}, calling AI")
+        insights = self._ai_extract_insights(topic, record)
+
+        # 保存到缓存
+        self._save_cache(topic, scenario, record_id, insights)
+
+        return insights
+
+    def _get_cache(
+        self,
+        topic: str,
+        scenario: Optional[str],
+        record_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """从缓存获取洞察"""
+        conn = self._get_cache_connection()
+        cursor = conn.cursor()
+
+        try:
+            # 检查缓存是否过期（7天）
+            cursor.execute('''
+                SELECT cache_data, created_at
+                FROM recommendation_cache
+                WHERE topic = ?
+                  AND COALESCE(scenario, '') = ?
+                  AND record_id = ?
+                  AND datetime(updated_at) > datetime('now', '-7 days')
+                ORDER BY updated_at DESC
+                LIMIT 1
+            ''', (topic, scenario or '', record_id))
+
+            row = cursor.fetchone()
+            if row:
+                return json.loads(row['cache_data'])
+
+        except sqlite3.Error as e:
+            logger.warning(f"[RECOMMEND_V2] Cache read error: {e}")
+
+        return None
+
+    def _save_cache(
+        self,
+        topic: str,
+        scenario: Optional[str],
+        record_id: str,
+        data: Dict[str, Any]
+    ) -> bool:
+        """保存洞察到缓存（先删除再插入，确保唯一性）"""
+        conn = self._get_cache_connection()
+        cursor = conn.cursor()
+
+        try:
+            cache_data = json.dumps(data, ensure_ascii=False)
+            # 先删除已存在的记录
+            cursor.execute('''
+                DELETE FROM recommendation_cache
+                WHERE topic = ? AND (scenario = ? OR scenario IS NULL) AND record_id = ?
+            ''', (topic, scenario, record_id))
+            # 再插入新记录
+            cursor.execute('''
+                INSERT INTO recommendation_cache
+                (topic, scenario, record_id, cache_data, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (topic, scenario, record_id, cache_data))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.warning(f"[RECOMMEND_V2] Cache save error: {e}")
+            return False
+
+    def _ai_extract_insights(
+        self,
+        topic: str,
+        record: Dict
+    ) -> Dict[str, Any]:
+        """
+        调用AI提炼分析内容
+
+        Args:
+            topic: 搜索主题
+            record: 记录数据
+
+        Returns:
+            {recommend_reasons, learnable_elements}
+        """
+        from backend.utils.text_client import get_text_chat_client
+        from backend.config import Config
+        from backend.prompts.recommendation_prompts import (
+            format_insights_extraction_prompt,
+            parse_insights_response
+        )
+
+        analysis_content = record.get('analysis_content', '')
+
+        if not analysis_content:
+            # 没有分析内容，返回默认结果
+            return {
+                'recommend_reasons': ['优质内容，值得学习'],
+                'learnable_elements': {
+                    'hook': '吸引注意',
+                    'structure': '清晰结构',
+                    'tone': '友好表达',
+                    'cta': '互动引导'
+                }
+            }
+
+        try:
+            # 获取文本客户端
+            text_config = Config.get_text_provider_config()
+            text_client = get_text_chat_client(text_config)
+
+            # 格式化提示词
+            prompt = format_insights_extraction_prompt(
+                topic=topic,
+                analysis_content=analysis_content,
+                record=record
+            )
+
+            # 调用 AI
+            response = text_client.generate_text(
+                prompt=prompt,
+                temperature=0.5,
+                max_output_tokens=2000,
+                timeout=30
+            )
+
+            # 解析响应
+            insights = parse_insights_response(response)
+            insights['extracted_at'] = datetime.now().isoformat()
+
+            logger.info(f"[RECOMMEND_V2] AI extraction successful for {record.get('record_id')}")
+            return insights
+
+        except Exception as e:
+            logger.warning(f"[RECOMMEND_V2] AI extraction failed: {e}, using fallback")
+
+            # 降级策略
+            return {
+                'recommend_reasons': [
+                    f"行业: {record.get('industry', '其他')}",
+                    f"互动量: {record.get('metrics', {}).get('total_engagement', 0)}"
+                ],
+                'learnable_elements': {
+                    'hook': '优质开头',
+                    'structure': '清晰结构',
+                    'tone': '友好风格',
+                    'cta': '有效互动'
+                },
+                'extracted_at': datetime.now().isoformat()
+            }
+
+    def _extract_keywords(self, text: str) -> List[str]:
+        """提取关键词（简单实现）"""
+        stopwords = {'的', '了', '是', '在', '有', '和', '与', '等', '一', '个', '怎么', '如何'}
+
+        words = []
+        text_lower = text.lower()
+        for i in range(len(text_lower)):
+            for length in [2, 3, 4]:
+                if i + length <= len(text_lower):
+                    word = text_lower[i:i+length]
+                    if word not in stopwords and word.strip():
+                        words.append(word)
+
+        from collections import Counter
+        word_count = Counter(words)
+        return [w for w, c in word_count.most_common(10)]
+
+    # ==================== 缓存管理 ====================
+
+    def clear_cache(
+        self,
+        target: str = 'all',
+        record_id: Optional[str] = None,
+        older_than_days: int = 7
+    ) -> int:
+        """
+        清除缓存
+
+        Args:
+            target: all | expired | record
+            record_id: target='record' 时必需
+            older_than_days: target='expired' 时，默认7天
+
+        Returns:
+            清除的条目数
+        """
+        conn = self._get_cache_connection()
+        cursor = conn.cursor()
+
+        try:
+            if target == 'all':
+                cursor.execute('DELETE FROM recommendation_cache')
+            elif target == 'expired':
+                cursor.execute(f'''
+                    DELETE FROM recommendation_cache
+                    WHERE datetime(updated_at) <= datetime('now', '-{older_than_days} days')
+                ''')
+            elif target == 'record':
+                if not record_id:
+                    raise ValueError("record_id required for target='record'")
+                cursor.execute('DELETE FROM recommendation_cache WHERE record_id = ?', (record_id,))
+
+            conn.commit()
+            cleared = cursor.rowcount
+            logger.info(f"[RECOMMEND_V2] Cleared {cleared} cache entries (target={target})")
+            return cleared
+
+        except sqlite3.Error as e:
+            logger.error(f"[RECOMMEND_V2] Cache clear error: {e}")
+            return 0
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """
+        获取缓存统计
+
+        Returns:
+            {total_entries, expired_entries}
+        """
+        conn = self._get_cache_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('SELECT COUNT(*) as total FROM recommendation_cache')
+            total = cursor.fetchone()['total']
+
+            cursor.execute('''
+                SELECT COUNT(*) as expired
+                FROM recommendation_cache
+                WHERE datetime(updated_at) <= datetime('now', '-7 days')
+            ''')
+            expired = cursor.fetchone()['expired']
+
+            return {
+                'total_entries': total,
+                'expired_entries': expired
+            }
+
+        except sqlite3.Error as e:
+            logger.error(f"[RECOMMEND_V2] Cache stats error: {e}")
+            return {'total_entries': 0, 'expired_entries': 0}
+
 
 # 全局服务实例
-_recommendation_service: Optional[RecommendationService] = None
+_recommendation_service_v2: Optional[RecommendationServiceV2] = None
 
 
-def get_recommendation_service() -> RecommendationService:
-    """获取推荐服务实例"""
-    global _recommendation_service
-    if _recommendation_service is None:
-        _recommendation_service = RecommendationService()
-    return _recommendation_service
+def get_recommendation_service_v2() -> RecommendationServiceV2:
+    """获取推荐服务 V2 单例"""
+    global _recommendation_service_v2
+    if _recommendation_service_v2 is None:
+        _recommendation_service_v2 = RecommendationServiceV2()
+    return _recommendation_service_v2
+
+
+# 向后兼容：保留旧的服务获取函数
+_recommendation_service_v1: Optional['RecommendationService'] = None
+
+
+def get_recommendation_service():
+    """获取推荐服务实例（自动使用V2）"""
+    # 导入V1类用于类型检查
+    global _recommendation_service_v1
+
+    # 返回V2服务（新的实现）
+    return get_recommendation_service_v2()

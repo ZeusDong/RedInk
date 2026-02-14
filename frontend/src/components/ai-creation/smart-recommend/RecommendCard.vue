@@ -1,129 +1,96 @@
 <template>
-  <div class="recommend-card">
-    <div class="card-header">
-      <div class="match-badge" :class="getMatchLevelClass()">
-        {{ getMatchLabel() }}
-      </div>
-      <div class="score-display">
-        热度指数
-        <span class="score">{{ getHeatScore() }}</span>
-      </div>
-    </div>
-
-    <div class="card-body">
-      <!-- 封面图 -->
-      <div class="cover-image">
-        <img :src="record.cover_url" :alt="record.title" />
-        <div v-if="record.images_count > 1" class="image-count">
-          {{ record.images_count }}图
+  <div class="recommend-card" :class="[`match-${matchLevel}`]">
+    <!-- 紧凑状态 -->
+    <div class="card-compact">
+      <div class="card-header">
+        <MatchBadge :score="matchScore" :level="matchLevel" :show-score="false" />
+        <div class="score-display">
+          热度指数
+          <span class="score">{{ getHeatScore() }}</span>
         </div>
       </div>
 
-      <!-- 标题 -->
-      <h4 class="record-title">{{ record.title }}</h4>
+      <div class="card-body">
+        <!-- 封面图 -->
+        <div class="cover-image">
+          <img :src="record.cover_url" :alt="record.title" />
+        </div>
 
-      <!-- 数据指标 -->
-      <div class="metrics">
-        <span class="metric">👍 {{ formatCount(record.metrics?.likes) }}</span>
-        <span class="metric">⭐ {{ formatCount(record.metrics?.saves) }}</span>
-        <span class="metric">💬 {{ formatCount(record.metrics?.comments) }}</span>
-      </div>
+        <!-- 标题 -->
+        <h4 class="record-title">{{ record.title }}</h4>
 
-      <!-- 标签 -->
-      <div class="tags">
-        <span class="tag">{{ record.industry || '未分类' }}</span>
-        <span class="tag">{{ record.note_type || '图文' }}</span>
-      </div>
+        <!-- 数据指标 -->
+        <div class="metrics">
+          <span class="metric">👍 {{ formatCount(record.metrics?.likes) }}</span>
+          <span class="metric">⭐ {{ formatCount(record.metrics?.saves) }}</span>
+          <span class="metric">💬 {{ formatCount(record.metrics?.comments) }}</span>
+        </div>
 
-      <!-- 匹配原因 -->
-      <div v-if="matchReasons.length > 0" class="match-reasons">
-        <div v-for="reason in matchReasons" :key="reason.type" class="reason-item">
-          <span class="reason-icon">{{ getReasonIcon(reason.type) }}</span>
-          <span class="reason-text">{{ reason.text }}</span>
+        <!-- 标签 -->
+        <div class="tags">
+          <span class="tag">{{ record.industry || '未分类' }}</span>
         </div>
       </div>
+
+      <button
+        @click="toggleExpanded"
+        class="expand-toggle"
+        :aria-expanded="expanded"
+      >
+        {{ expanded ? '收起 ▲' : '展开更多 ▼' }}
+      </button>
     </div>
 
-    <div class="card-actions">
-      <button @click="handleViewDetail" class="action-btn secondary">
-        查看详情
-      </button>
-      <button @click="handleApply" class="action-btn primary">
-        应用到创作
-      </button>
-    </div>
+    <!-- 展开状态（过渡动画） -->
+    <Transition name="expand">
+      <div v-if="expanded" class="card-expanded">
+        <RecommendReasons :reasons="recommendReasons" />
+        <LearnableElements :elements="learnableElements" />
+        <div class="card-actions">
+          <button @click="handleViewDetail" class="action-btn secondary">
+            查看详情
+          </button>
+          <button @click="handleApply" class="action-btn primary">
+            应用到创作
+          </button>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref } from 'vue'
+import type { RecommendationItem, MatchLevel } from '@/types/recommendation'
+import MatchBadge from './MatchBadge.vue'
+import RecommendReasons from './RecommendReasons.vue'
+import LearnableElements from './LearnableElements.vue'
 
-interface ReferenceRecord {
-  record_id: string
-  title: string
-  cover_url: string
-  images_count?: number
-  industry?: string
-  note_type?: string
-  metrics?: {
-    likes?: number
-    saves?: number
-    comments?: number
+interface Props {
+  recordId: string
+  record: RecommendationItem['record']
+  matchScore: number
+  matchLevel: MatchLevel
+  recommendReasons: string[]
+  learnableElements: {
+    hook: string
+    structure: string
+    tone: string
+    cta: string
   }
 }
 
-interface RecommendationData {
-  match_score: number
-  reasons?: string[]
-}
-
-const props = defineProps<{
-  record: ReferenceRecord
-  matchData: RecommendationData
-}>()
+const props = defineProps<Props>()
 
 const emit = defineEmits<{
-  viewDetail: [record: ReferenceRecord]
-  apply: [record: ReferenceRecord]
+  viewDetail: [recordId: string]
+  apply: [recordId: string]
 }>()
 
-const matchReasons = computed(() => {
-  const reasons: Array<{ type: string; text: string }> = []
+const expanded = ref(false)
 
-  if (props.matchData.match_score > 0.8) {
-    reasons.push({
-      type: 'high',
-      text: `高度相关 (匹配度 ${Math.round(props.matchData.match_score * 100)}%)`
-    })
-  }
-
-  if (props.matchData.reasons?.includes('industry')) {
-    reasons.push({ type: 'industry', text: '行业匹配' })
-  }
-
-  if (props.matchData.reasons?.includes('keyword')) {
-    reasons.push({ type: 'keyword', text: '包含关键词' })
-  }
-
-  if (props.matchData.reasons?.includes('trending')) {
-    reasons.push({ type: 'trending', text: '热门内容' })
-  }
-
-  return reasons
-})
-
-function getMatchLevelClass() {
-  const score = props.matchData.match_score
-  if (score >= 0.8) return 'high'
-  if (score >= 0.5) return 'medium'
-  return 'low'
-}
-
-function getMatchLabel() {
-  const score = props.matchData.match_score
-  if (score >= 0.8) return '🔥 高度匹配'
-  if (score >= 0.5) return '📌 相关推荐'
-  return '💡 可能相关'
+function toggleExpanded() {
+  expanded.value = !expanded.value
 }
 
 function getHeatScore() {
@@ -138,16 +105,6 @@ function getHeatScore() {
   return '📈'
 }
 
-function getReasonIcon(type: string) {
-  const icons: Record<string, string> = {
-    high: '🎯',
-    industry: '🏷️',
-    keyword: '🔑',
-    trending: '📈'
-  }
-  return icons[type] || '•'
-}
-
 function formatCount(count?: number): string {
   if (!count) return '0'
   if (count >= 10000) return (count / 10000).toFixed(1) + 'w'
@@ -156,11 +113,11 @@ function formatCount(count?: number): string {
 }
 
 function handleViewDetail() {
-  emit('viewDetail', props.record)
+  emit('viewDetail', props.recordId)
 }
 
 function handleApply() {
-  emit('apply', props.record)
+  emit('apply', props.recordId)
 }
 </script>
 
@@ -173,9 +130,28 @@ function handleApply() {
   transition: all 0.2s;
 }
 
-.recommend-card:hover {
+.recommend-card.match-high {
+  border-color: rgba(255, 36, 66, 0.3);
+}
+
+.recommend-card.match-high:hover {
   border-color: var(--primary, #ff2442);
-  box-shadow: 0 4px 16px rgba(255, 36, 66, 0.1);
+  box-shadow: 0 4px 16px rgba(255, 36, 66, 0.15);
+}
+
+.recommend-card.match-medium:hover {
+  border-color: #ff9800;
+  box-shadow: 0 4px 16px rgba(255, 152, 0, 0.1);
+}
+
+.recommend-card.match-low:hover {
+  border-color: #999;
+  box-shadow: 0 4px 16px rgba(153, 153, 153, 0.1);
+}
+
+.card-compact {
+  display: flex;
+  flex-direction: column;
 }
 
 .card-header {
@@ -185,28 +161,6 @@ function handleApply() {
   padding: 12px 16px;
   background: #f8f7f5;
   border-bottom: 1px solid #e8e6e3;
-}
-
-.match-badge {
-  padding: 4px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.match-badge.high {
-  background: rgba(255, 36, 66, 0.1);
-  color: var(--primary, #ff2442);
-}
-
-.match-badge.medium {
-  background: rgba(255, 152, 0, 0.1);
-  color: #ff9800;
-}
-
-.match-badge.low {
-  background: rgba(153, 153, 153, 0.1);
-  color: #999;
 }
 
 .score-display {
@@ -242,17 +196,6 @@ function handleApply() {
   object-fit: cover;
 }
 
-.image-count {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  padding: 4px 8px;
-  background: rgba(0, 0, 0, 0.6);
-  color: white;
-  border-radius: 4px;
-  font-size: 11px;
-}
-
 .record-title {
   font-size: 15px;
   font-weight: 600;
@@ -275,7 +218,7 @@ function handleApply() {
 .tags {
   display: flex;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .tag {
@@ -286,38 +229,55 @@ function handleApply() {
   color: #666;
 }
 
-.match-reasons {
+.expand-toggle {
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: #f8f7f5;
+  color: #666;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-top: 1px solid #e8e6e3;
+}
+
+.expand-toggle:hover {
+  background: #f0efed;
+  color: #333;
+}
+
+.card-expanded {
+  padding: 16px;
+  border-top: 1px solid #e8e6e3;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #f0efed;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.reason-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  background: rgba(255, 36, 66, 0.05);
-  border-radius: 4px;
-  font-size: 12px;
-  color: var(--primary, #ff2442);
+/* 展开动画 */
+.expand-enter-active,
+.expand-leave-active {
+  transition: all 0.3s ease;
+  overflow: hidden;
 }
 
-.reason-icon {
-  font-size: 14px;
+.expand-enter-from,
+.expand-leave-to {
+  max-height: 0;
+  opacity: 0;
 }
 
-.reason-text {
-  font-size: 12px;
+.expand-enter-to,
+.expand-leave-from {
+  max-height: 500px;
+  opacity: 1;
 }
 
 .card-actions {
   display: flex;
   gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid #e8e6e3;
+  margin-top: 4px;
 }
 
 .action-btn {

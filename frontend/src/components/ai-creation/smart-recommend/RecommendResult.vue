@@ -23,9 +23,13 @@
     <div v-if="recommendations.length > 0" class="recommend-list">
       <RecommendCard
         v-for="item in sortedRecommendations"
-        :key="item.record.record_id"
+        :key="item.record_id"
+        :record-id="item.record_id"
         :record="item.record"
-        :match-data="item"
+        :match-score="item.match_score"
+        :match-level="item.match_level"
+        :recommend-reasons="item.recommend_reasons"
+        :learnable-elements="item.learnable_elements"
         @view-detail="handleViewDetail"
         @apply="handleApply"
       />
@@ -49,26 +53,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import RecommendCard from './RecommendCard.vue'
-
-interface ReferenceRecord {
-  record_id: string
-  title: string
-  cover_url: string
-  images_count?: number
-  industry?: string
-  note_type?: string
-  metrics?: {
-    likes?: number
-    saves?: number
-    comments?: number
-  }
-}
-
-interface RecommendationItem {
-  record: ReferenceRecord
-  match_score: number
-  reasons?: string[]
-}
+import type { RecommendationItem } from '@/types/recommendation'
 
 const props = defineProps<{
   recommendations: RecommendationItem[]
@@ -77,8 +62,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  viewDetail: [record: ReferenceRecord]
-  apply: [record: ReferenceRecord]
+  viewDetail: [recordId: string]
+  apply: [recordId: string]
 }>()
 
 const sortBy = ref<'relevance' | 'heat' | 'likes'>('relevance')
@@ -106,12 +91,12 @@ function handleSortChange() {
   // Sort handled by computed property
 }
 
-function handleViewDetail(record: ReferenceRecord) {
-  emit('viewDetail', record)
+function handleViewDetail(recordId: string) {
+  emit('viewDetail', recordId)
 }
 
-function handleApply(record: ReferenceRecord) {
-  emit('apply', record)
+function handleApply(recordId: string) {
+  emit('apply', recordId)
 }
 </script>
 

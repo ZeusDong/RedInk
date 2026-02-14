@@ -8,7 +8,6 @@
     <div class="input-group">
       <input
         v-model="topicInput"
-        @input="handleInput"
         @keyup.enter="handleSearch"
         type="text"
         placeholder="例如：春季护肤小技巧"
@@ -63,15 +62,16 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import type { ScenarioType } from '@/types/recommendation'
 
 const topicInput = ref('')
 const loading = ref(false)
-const selectedScenario = ref<string | null>(null)
+const selectedScenario = ref<ScenarioType | null>(null)
 
 const scenarios = [
-  { label: '新手入门', value: 'beginner' },
-  { label: '追热点', value: 'trending' },
-  { label: '提升质量', value: 'quality' }
+  { label: '新手入门', value: 'beginner' as ScenarioType },
+  { label: '追热点', value: 'trending' as ScenarioType },
+  { label: '提升质量', value: 'quality' as ScenarioType }
 ]
 
 const hotTopics = ref([
@@ -81,20 +81,8 @@ const hotTopics = ref([
 ])
 
 const emit = defineEmits<{
-  search: [topic: string, scenario?: string]
+  search: [topic: string, scenario?: ScenarioType]
 }>()
-
-let debounceTimer: ReturnType<typeof setTimeout>
-
-function handleInput() {
-  // 防抖实时搜索
-  clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => {
-    if (topicInput.value.length >= 2) {
-      handleSearch()
-    }
-  }, 500)
-}
 
 async function handleSearch() {
   if (!topicInput.value.trim()) return
@@ -106,7 +94,7 @@ async function handleSearch() {
   }
 }
 
-function applyScenario(scenario: string) {
+function applyScenario(scenario: ScenarioType) {
   selectedScenario.value = selectedScenario.value === scenario ? null : scenario
   if (topicInput.value) {
     handleSearch()
