@@ -278,3 +278,155 @@ def calculate_match_level(score: float) -> str:
         return 'medium'
     else:
         return 'low'
+
+
+SEMANTIC_SCORING_PROMPT = """你是一位专业的小红书内容推荐专家，擅长判断笔记与用户搜索意图的语义相关性。
+
+## 用户搜索主题
+{topic}
+
+## 候选笔记列表
+{candidates}
+
+## 评分维度
+
+### 1. 主题相关度（0-10分）
+- 10分：内容主题与搜索词高度一致，完全符合用户意图
+- 7-9分：主题相关，略有偏差但仍有参考价值
+- 4-6分：主题有一定关联，但存在明显差异
+- 1-3分：主题勉强相关，参考价值有限
+- 0分：完全不相关
+
+### 2. 目标用户匹配度（0-10分）
+评估目标受众是否一致：性别、年龄层、消费能力、身份定位等。
+例如："男士穿搭" vs "御姐风" = 0-2分；"职场小白" vs "资深高管" = 低分
+
+### 3. 内容风格适配性（0-10分）
+评估表达风格、调性是否适合作为创作参考。包括：语气风格、内容结构、视觉风格等。
+
+### 4. 数据表现加分（0-5分）
+高互动量笔记额外加分，作为参考价值的辅助判断。
+
+## 输出要求
+
+请严格按照以下 JSON 格式输出（不要添加任何其他文字）：
+
+```json
+{{
+  "scores": [
+    {{"record_id": "xxx", "主题相关度": 8, "目标用户匹配度": 2, "内容风格适配性": 7, "数据表现加分": 3}},
+    {{"record_id": "yyy", "主题相关度": 6, "目标用户匹配度": 9, "内容风格适配性": 8, "数据表现加分": 4}}
+  ]
+}}
+```
+
+## 注意事项
+1. 必须为每个候选笔记打分，不能遗漏
+2. 分数要客观、准确，不要随意打高分
+3. 考虑小红书平台的内容特点和用户需求
+"""
+
+
+def format_semantic_scoring_prompt(topic: str, candidates: List[Dict[str, Any]]) -> str:
+    """
+    Format semantic scoring prompt with actual data.
+
+    Args:
+        topic: User's search topic
+        candidates: List of candidate records with summary info
+
+    Returns:
+        Formatted prompt string
+    """
+    # Build candidate summary list
+    candidate_lines = []
+    for i, cand in enumerate(candidates, 1):
+        record_id = cand.get('record_id', '')
+        title = cand.get('title', '')[:50]  # Limit length
+        industry = cand.get('industry', '未知')
+        metrics = cand.get('metrics', {})
+        engagement = metrics.get('total_engagement', 0)
+
+        # Extract keywords from title for context
+        title_keywords = cand.get('title', '')[:30]
+
+        line = f"{i}. record_id: {record_id} | 标题: {title} | 行业: {industry} | 互动量: {engagement} | 关键词: {title_keywords}"
+        candidate_lines.append(line)
+
+    candidates_text = "\n".join(candidate_lines)
+
+    return SEMANTIC_SCORING_PROMPT.format(topic=topic, candidates=candidates_text)
+
+
+def parse_semantic_scoring_response(response: str) -> Dict[str, Dict[str, Any]]:
+    """
+    Parse AI semantic scoring response.
+
+    Args:
+        response: AI returned text
+
+    Returns:
+        Dict mapping record_id to scores dict
+    """
+    import json
+    import re
+
+    # Try to parse JSON from code block
+    json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response)
+    if json_match:
+        json_str = json_match.group(1)
+    else:
+        # Try to find pure JSON
+        json_match = re.search(r'\{[\s\S]*\}', response)
+        if json_match:
+            json_str = json_match.group(0)
+        else:
+            raise ValueError("No valid JSON found in AI response")
+
+    try:
+        data = json.loads(json_str)
+
+        if 'scores' not in data:
+            raise ValueError("Missing 'scores' field in AI response")
+
+        # Convert to dict: {record_id: scores_dict}
+        scores_by_id = {}
+        for item in data['scores']:
+            record_id = item.get('record_id')
+            if record_id:
+                scores_by_id[record_id] = {
+                    'topic_relevance': item.get('主题相关度', 0),
+                    'audience_match': item.get('目标用户匹配度', 0),
+                    'style_fit': item.get('内容风格适配性', 0),
+                    'performance_bonus': item.get('数据表现加分', 0)
+                }
+
+        return scores_by_id
+
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse JSON response: {e}")
+
+
+def calculate_final_score(scores: Dict[str, Any]) -> float:
+    """
+    Calculate final weighted score from AI dimensions.
+
+    Weight distribution:
+    - Topic relevance: 40%
+    - Audience match: 30%
+    - Style fit: 20%
+    - Performance bonus: 10%
+
+    Args:
+        scores: Dict with topic_relevance, audience_match, style_fit, performance_bonus
+
+    Returns:
+        Final weighted score (0-10)
+    """
+    return round(
+        scores.get('topic_relevance', 0) * 0.4 +
+        scores.get('audience_match', 0) * 0.3 +
+        scores.get('style_fit', 0) * 0.2 +
+        scores.get('performance_bonus', 0) * 0.1,
+        2
+    )
