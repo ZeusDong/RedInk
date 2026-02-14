@@ -69,7 +69,7 @@ const router = createRouter({
       children: [
         {
           path: '',
-          redirect: '/ai-creation/create'
+          redirect: '/ai-creation/recommend'
         },
         {
           path: 'create',

@@ -20,15 +20,15 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 
 const tabs = [
-  { key: 'create', icon: '📑', label: '快速创作' },
   { key: 'recommend', icon: '💡', label: '智能推荐' },
   { key: 'templates', icon: '📋', label: '模板库' },
+  { key: 'create', icon: '📑', label: '快速创作' },
   { key: 'optimize', icon: '✨', label: '内容优化' }
 ]
 
 const currentTab = computed(() => {
   const match = route.path.match(/\/ai-creation\/([^/]+)/)
-  return match ? match[1] : 'create'
+  return match ? match[1] : 'recommend'
 })
 </script>
 
