@@ -620,6 +620,59 @@ class RecommendationServiceV2:
             logger.warning(f"[RECOMMEND_V2] Semantic cache save error: {e}")
             return False
 
+    def _ai_semantic_scoring(
+        self,
+        topic: str,
+        candidates: List[Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Call AI to batch-score candidates on semantic relevance.
+
+        Args:
+            topic: User's search topic
+            candidates: List of candidate records
+
+        Returns:
+            Dict mapping record_id to scores dict
+
+        Raises:
+            Exception: If AI call fails or response parsing fails
+        """
+        from backend.utils.text_client import get_text_chat_client
+        from backend.config import Config
+
+        logger.info(f"[RECOMMEND_V2] Calling AI semantic scoring for {len(candidates)} candidates")
+
+        try:
+            # Get text client
+            text_config = Config.get_text_provider_config()
+            text_client = get_text_chat_client(text_config)
+
+            # Format prompt
+            prompt = format_semantic_scoring_prompt(topic, candidates)
+
+            # Call AI with higher timeout for batch processing
+            response = text_client.generate_text(
+                prompt=prompt,
+                temperature=0.3,  # Lower temp for more consistent scoring
+                max_output_tokens=4000,
+                timeout=45  # Longer timeout for batch scoring
+            )
+
+            # Parse response
+            scores_by_id = parse_semantic_scoring_response(response)
+
+            # Calculate final scores
+            for record_id, scores in scores_by_id.items():
+                scores['final_score'] = calculate_final_score(scores)
+
+            logger.info(f"[RECOMMEND_V2] AI semantic scoring completed for {len(scores_by_id)} candidates")
+            return scores_by_id
+
+        except Exception as e:
+            logger.error(f"[RECOMMEND_V2] AI semantic scoring failed: {e}")
+            raise  # Re-raise for caller to handle fallback
+
     def _ensure_insights(
         self,
         record: Dict[str, Any],
@@ -736,7 +789,10 @@ class RecommendationServiceV2:
         from backend.config import Config
         from backend.prompts.recommendation_prompts import (
             format_insights_extraction_prompt,
-            parse_insights_response
+            parse_insights_response,
+            format_semantic_scoring_prompt,
+            parse_semantic_scoring_response,
+            calculate_final_score
         )
 
         analysis_content = record.get('analysis_content', '')
