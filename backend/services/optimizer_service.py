@@ -332,6 +332,33 @@ class OptimizerService:
 
         return issues
 
+    def dismiss_suggestion(
+        self,
+        content: Dict[str, Any],
+        suggestion_id: str
+    ) -> Dict[str, Any]:
+        """
+        忽略优化建议
+
+        Args:
+            content: 内容对象（包含suggestions列表）
+            suggestion_id: 要忽略的建议ID
+
+        Returns:
+            更新后的内容（suggestions中标记为已忽略）
+        """
+        # 获取建议列表
+        suggestions = content.get('suggestions', [])
+
+        # 找到目标建议并标记
+        for suggestion in suggestions:
+            if suggestion.get('id') == suggestion_id:
+                suggestion['dismissed'] = True
+                logger.info(f"🔕 忽略建议: {suggestion_id}")
+                break
+
+        return content
+
     def apply_suggestion(
         self,
         content: Dict[str, Any],

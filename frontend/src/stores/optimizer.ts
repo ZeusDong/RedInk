@@ -68,7 +68,10 @@ export const useOptimizerStore = defineStore('optimizer', () => {
       const response = await fetch('/api/optimize/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ suggestion_id: suggestionId })
+        body: JSON.stringify({
+          content: currentContent.value,  // 添加当前内容
+          suggestion_id: suggestionId
+        })
       })
 
       const data = await response.json()
@@ -94,14 +97,22 @@ export const useOptimizerStore = defineStore('optimizer', () => {
       const response = await fetch('/api/optimize/dismiss', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ suggestion_id: suggestionId })
+        body: JSON.stringify({
+          content: {
+            ...currentContent.value,
+            suggestions: suggestions.value
+          },
+          suggestion_id: suggestionId
+        })
       })
 
       const data = await response.json()
       if (data.success) {
         const suggestion = suggestions.value.find(s => s.id === suggestionId)
         if (suggestion) {
-          suggestion.applied = true
+          // 从列表中移除或标记为已忽略
+          const idx = suggestions.value.indexOf(suggestion)
+          suggestions.value.splice(idx, 1)
         }
       }
     } catch (error) {

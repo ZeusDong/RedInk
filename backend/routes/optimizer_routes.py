@@ -67,6 +67,7 @@ def create_optimizer_blueprint():
 
         请求体:
         {
+            "content": {...},           # 新增：原始内容
             "suggestion_id": "...",
             "action_type": "edit",
             "action_data": {...}
@@ -83,10 +84,12 @@ def create_optimizer_blueprint():
         """
         try:
             data = request.get_json()
+            content = data.get('content', {})       # 新增
             suggestion_id = data.get('suggestion_id')
 
             service = get_optimizer_service()
             result = service.apply_suggestion(
+                content=content,                    # 新增必需参数
                 suggestion_id=suggestion_id,
                 update_content=True
             )
@@ -112,6 +115,7 @@ def create_optimizer_blueprint():
 
         请求体:
         {
+            "content": {...},           # 新增：原始内容
             "suggestion_id": "..."
         }
 
@@ -122,10 +126,14 @@ def create_optimizer_blueprint():
         """
         try:
             data = request.get_json()
+            content = data.get('content', {})       # 新增
             suggestion_id = data.get('suggestion_id')
 
             service = get_optimizer_service()
-            service.dismiss_suggestion(suggestion_id)
+            service.dismiss_suggestion(
+                content=content,                    # 新增必需参数
+                suggestion_id=suggestion_id
+            )
 
             logger.info(f"🔕 忽略建议: {suggestion_id}")
 

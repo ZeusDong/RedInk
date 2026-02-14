@@ -38,6 +38,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useGeneratorStore } from '@/stores/generator'
 import ComposerInput from '@/components/home/ComposerInput.vue'
 import InsightPanel from './InsightPanel.vue'
 
@@ -47,6 +48,7 @@ interface AppliedInsight {
 }
 
 const router = useRouter()
+const generatorStore = useGeneratorStore()
 const topicInput = ref('')
 const generating = ref(false)
 const selectedInsights = ref<AppliedInsight[]>([])
@@ -56,16 +58,39 @@ function handleGenerate() {
 
   generating.value = true
 
-  // TODO: 调用生成 API，传递 insights
-  console.log('Generating with topic:', topicInput.value)
-  console.log('Applied insights:', selectedInsights.value)
+  // 调用生成 API，传递 insights
+  generateOutline()
+}
 
-  // 模拟生成流程
-  setTimeout(() => {
+async function generateOutline() {
+  try {
+    const response = await fetch('/api/outline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        topic: topicInput.value.trim(),
+        reference_records: selectedInsights.value.map(i => i.data)
+      })
+    })
+
+    const data = await response.json()
+    if (data.success) {
+      // 保存到generator store
+      generatorStore.setTopic(topicInput.value.trim())
+      generatorStore.setOutline(data.outline || '', data.pages || [])
+
+      // 跳转到大纲页面
+      router.push({ name: 'outline' })
+    } else {
+      console.error('生成失败:', data.error)
+      alert(data.error || '生成失败，请重试')
+    }
+  } catch (error) {
+    console.error('生成异常:', error)
+    alert('生成失败，请重试')
+  } finally {
     generating.value = false
-    // 跳转到大纲页面
-    router.push({ name: 'outline' })
-  }, 2000)
+  }
 }
 
 function handleImagesChange(images: File[]) {

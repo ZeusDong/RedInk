@@ -80,6 +80,14 @@
       @close="showPreviewModal = false"
       @apply="handleApplyFromPreview"
     />
+
+    <!-- 创建模板弹窗 -->
+    <TemplateCreateModal
+      :visible="showCreateModal"
+      :industries="templateStore.industries"
+      @close="showCreateModal = false"
+      @create="handleCreateTemplate"
+    />
   </div>
 </template>
 
@@ -89,6 +97,7 @@ import { useRouter } from 'vue-router'
 import { useTemplateStore } from '@/stores/template'
 import TemplateCard from './TemplateCard.vue'
 import TemplatePreview from './TemplatePreview.vue'
+import TemplateCreateModal from './TemplateCreateModal.vue'
 
 const router = useRouter()
 const templateStore = useTemplateStore()
@@ -151,6 +160,13 @@ async function handleApplyTemplate(template: any) {
 function handleApplyFromPreview(template: any) {
   showPreviewModal.value = false
   handleApplyTemplate(template)
+}
+
+async function handleCreateTemplate(templateData: any) {
+  const result = await templateStore.createTemplate(templateData)
+  if (result) {
+    showCreateModal.value = false
+  }
 }
 
 onMounted(() => {
