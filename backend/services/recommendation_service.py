@@ -46,9 +46,11 @@ class RecommendationServiceV2:
         self.base_dir = Path(__file__).parent.parent.parent
         self.analysis_db_path = self.base_dir / 'analysis' / 'analysis.db'
         self.cache_db_path = self.base_dir / 'analysis' / 'recommendation_cache.db'
+        self.synonyms_config_path = self.base_dir / 'synonyms.yaml'
 
         logger.debug(f"[RECOMMEND] Analysis DB: {self.analysis_db_path}")
         logger.debug(f"[RECOMMEND] Cache DB: {self.cache_db_path}")
+        logger.debug(f"[RECOMMEND] Synonyms config: {self.synonyms_config_path}")
 
         # 确保目录存在
         self.analysis_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -56,6 +58,11 @@ class RecommendationServiceV2:
         # 使用线程本地存储连接
         self._local = threading.local()
         self._cache_local = threading.local()
+
+        # 加载同义词配置
+        self._synonyms = {}
+        self._synonyms_lock = threading.Lock()
+        self._load_synonyms_config()
 
         # 初始化数据库
         self._init_cache_db()
@@ -177,8 +184,10 @@ class RecommendationServiceV2:
             logger.warning("[RECOMMEND] No analyzed records found")
             return []
 
-        # 提取关键词
+        # 提取关键词并扩展同义词
         keywords = self._extract_keywords(topic)
+        expanded_keywords = self._expand_keywords_with_synonyms(keywords, topic)
+        logger.info(f"[RECOMMEND] topic='{topic}', Original: {keywords}, Expanded: {expanded_keywords}")
 
         # 获取候选记录
         candidates = self._filter_candidates(analyzed_records, industry, scenario)
@@ -187,11 +196,21 @@ class RecommendationServiceV2:
             logger.warning("[RECOMMEND] No candidates after filtering")
             return []
 
-        # 计算每个候选的得分
+        # 计算每个候选的得分（同时传递原始关键词和扩展关键词）
         scored_results = []
         passed_threshold = 0
+        debug_scoring = []  # 用于调试的得分记录
+
         for record_id, record in candidates.items():
-            score_data = self._calculate_score(topic, keywords, record)
+            score_data = self._calculate_score(topic, keywords, expanded_keywords, record)
+            title = record.get('title', '')
+
+            # 记录调试信息
+            debug_scoring.append({
+                'title': title,
+                'total': score_data['match_score'],
+                'details': score_data['scores']
+            })
 
             # 最低相关性阈值提高到0.3
             if score_data['match_score'] >= 0.3:
@@ -210,7 +229,12 @@ class RecommendationServiceV2:
                 }
                 scored_results.append(result)
 
-        logger.debug(f"[RECOMMEND] Passed threshold: {passed_threshold}/{len(candidates)}")
+        # 输出调试信息：按得分排序的前10个笔记
+        debug_scoring.sort(key=lambda x: x['total'], reverse=True)
+        logger.info(f"[RECOMMEND] Top candidates by score:")
+        for i, item in enumerate(debug_scoring[:10]):
+            logger.info(f"  {i+1}. [{item['total']:.2f}] {item['title'][:40]}...")
+        logger.info(f"[RECOMMEND] Passed threshold: {passed_threshold}/{len(candidates)}")
 
         # 按关键词得分排序，取TOP 30
         scored_results.sort(key=lambda x: x['match_score'], reverse=True)
@@ -308,6 +332,7 @@ class RecommendationServiceV2:
         # 基于行业和关键词找相似
         industry = target.get('industry')
         keywords = self._extract_keywords(target.get('title', ''))
+        expanded_keywords = self._expand_keywords_with_synonyms(keywords, target.get('title', ''))
 
         candidates = self._filter_candidates(analyzed_records, industry, None)
 
@@ -316,9 +341,9 @@ class RecommendationServiceV2:
             if rid == record_id:
                 continue
 
-            # 计算相似度
+            # 计算相似度（使用扩展关键词）
             similarity = 0.0
-            for kw in keywords[:5]:
+            for kw in expanded_keywords[:5]:
                 if kw in record.get('title', '').lower():
                     similarity += 0.2
 
@@ -454,44 +479,69 @@ class RecommendationServiceV2:
     def _calculate_score(
         self,
         topic: str,
-        keywords: List[str],
+        original_keywords: List[str],
+        expanded_keywords: List[str],
         record: Dict
     ) -> Dict[str, Any]:
-        """计算匹配得分"""
+        """
+        计算匹配得分
+
+        权重分配（已优化）：
+        - 关键词匹配: 60% （必须有搜索词相关内容）
+        - 内容相似度: 20%
+        - 数据表现: 15%
+        - 行业匹配: 5% （仅作为辅助参考）
+
+        Args:
+            topic: 用户搜索主题
+            original_keywords: 从 topic 提取的原始关键词（2-4字）
+            expanded_keywords: 扩展后的关键词（包含同义词）
+            record: 笔记记录
+        """
         scores = {
-            'industry': 0.0,
-            'keyword': 0.0,
-            'performance': 0.0,
-            'similarity': 0.0
+            'keyword': 0.0,      # 关键词匹配 (60%)
+            'similarity': 0.0,   # 内容相似度 (20%)
+            'performance': 0.0,  # 数据表现 (15%)
+            'industry': 0.0      # 行业匹配 (5%)
         }
 
-        # 行业匹配 (25%)
-        if record.get('industry'):
-            scores['industry'] = 0.25
-
-        # 关键词匹配 (35%)
         title = record.get('title', '').lower()
         body = record.get('content', '').lower()
-        keyword_hits = 0
-        for kw in keywords:
-            if kw in title or kw in body:
-                keyword_hits += 1
-        if keywords:
-            scores['keyword'] = min((keyword_hits / len(keywords)) * 0.35, 0.35)
 
-        # 数据表现 (20%)
-        metrics = record.get('metrics', {})
-        engagement = metrics.get('total_engagement', 0)
-        scores['performance'] = min(engagement / 10000 * 0.2, 0.2)
+        # 关键词匹配 (60%) - 核心权重
+        # 使用 ORIGINAL_KEYWORDS 作为分母，避免同义词稀释得分
+        keyword_hits = 0
+        effective_keywords = original_keywords if original_keywords else expanded_keywords
+
+        for kw in expanded_keywords:
+            if kw in title:
+                keyword_hits += 1.5  # 标题命中权重更高
+            elif kw in body:
+                keyword_hits += 0.8  # 正文中命中权重较低
+
+        if effective_keywords:
+            # 限制最高分为 0.6，分母使用原始关键词数量（更少，得分更高）
+            scores['keyword'] = min((keyword_hits / len(effective_keywords)) * 0.6, 0.6)
 
         # 内容相似度 (20%)
         topic_lower = topic.lower()
-        similarity = 0.0
         if topic_lower in title:
-            similarity += 0.1
-        if any(kw in body for kw in keywords):
-            similarity += 0.1
-        scores['similarity'] = similarity
+            scores['similarity'] += 0.12  # 完整匹配得分更高
+        # 检查部分匹配
+        for kw in expanded_keywords:
+            if kw in body:
+                scores['similarity'] += 0.04
+        scores['similarity'] = min(scores['similarity'], 0.2)
+
+        # 数据表现 (15%) - 最多 0.15 分
+        metrics = record.get('metrics', {})
+        engagement = metrics.get('total_engagement', 0)
+        scores['performance'] = min(engagement / 10000 * 0.15, 0.15)
+
+        # 行业匹配 (5%) - 仅作为辅助，不再无条件给分
+        # 只有当关键词匹配得分 > 0 时，行业匹配才有效
+        if record.get('industry') and scores['keyword'] > 0:
+            scores['industry'] = 0.05
 
         # 总分
         total_score = round(sum(scores.values()), 2)
@@ -947,6 +997,55 @@ class RecommendationServiceV2:
         word_count = Counter(words)
         return [w for w, c in word_count.most_common(10)]
 
+    def _expand_keywords_with_synonyms(self, keywords: List[str], topic: str) -> List[str]:
+        """
+        扩展关键词，使用配置文件 + AI 混合方案
+
+        流程：
+        1. 先从 synonyms.yaml 配置文件中查找同义词
+        2. 如果配置文件中没有，调用 AI 扩展
+        3. AI 扩展结果自动保存到配置文件
+
+        Args:
+            keywords: 原始关键词列表
+            topic: 用户搜索的主题（用于更精确的匹配）
+
+        Returns:
+            扩展后的关键词列表
+        """
+        expanded_keywords = set(keywords)  # 使用 set 去重
+
+        # 1. 从配置文件中查找
+        for kw in keywords:
+            if kw in self._synonyms:
+                expanded_keywords.update(self._synonyms[kw])
+
+        # 2. 对于新关键词，尝试用 AI 扩展
+        new_keywords = [kw for kw in keywords if kw not in self._synonyms]
+        if new_keywords:
+            ai_synonyms = self._ai_expand_keywords_batch(new_keywords)
+            if ai_synonyms:
+                # 更新内存中的字典
+                self._synonyms.update(ai_synonyms)
+                # 保存到配置文件
+                self._save_synonyms_config()
+                # 合并到结果
+                for kw in new_keywords:
+                    if kw in ai_synonyms:
+                        expanded_keywords.update(ai_synonyms[kw])
+
+        # 3. 对于季节类搜索，额外添加单字匹配（冬、夏、春、秋）
+        topic_lower = topic.lower()
+        season_chars = ['冬', '夏', '春', '秋']
+        for char in season_chars:
+            if char in topic_lower:
+                expanded_keywords.add(char)
+                # 如果单字有同义词，也添加
+                if char in self._synonyms:
+                    expanded_keywords.update(self._synonyms[char])
+
+        return list(expanded_keywords)
+
     # ==================== 缓存管理 ====================
 
     def clear_cache(
@@ -1020,6 +1119,145 @@ class RecommendationServiceV2:
         except sqlite3.Error as e:
             logger.error(f"[RECOMMEND] Cache stats error: {e}")
             return {'total_entries': 0, 'expired_entries': 0}
+
+    # ==================== 同义词配置管理 ====================
+
+    def _load_synonyms_config(self):
+        """
+        加载同义词配置文件
+        如果文件不存在，创建空文件
+        """
+        try:
+            if self.synonyms_config_path.exists():
+                import yaml
+                with open(self.synonyms_config_path, 'r', encoding='utf-8') as f:
+                    self._synonyms = yaml.safe_load(f) or {}
+                logger.info(f"[RECOMMEND] Loaded synonyms for {len(self._synonyms)} keywords")
+            else:
+                logger.warning(f"[RECOMMEND] Synonyms config not found at {self.synonyms_config_path}")
+                self._synonyms = {}
+        except Exception as e:
+            logger.error(f"[RECOMMEND] Failed to load synonyms config: {e}")
+            self._synonyms = {}
+
+    def _save_synonyms_config(self):
+        """
+        保存同义词配置到文件
+        线程安全，带锁
+        """
+        try:
+            with self._synonyms_lock:
+                import yaml
+                with open(self.synonyms_config_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(
+                        self._synonyms,
+                        f,
+                        allow_unicode=True,
+                        sort_keys=True,
+                        default_flow_style=False,
+                        indent=2
+                    )
+                logger.info(f"[RECOMMEND] Saved synonyms config with {len(self._synonyms)} keywords")
+        except Exception as e:
+            logger.error(f"[RECOMMEND] Failed to save synonyms config: {e}")
+
+    def _ai_expand_keywords_batch(self, keywords: List[str]) -> Dict[str, List[str]]:
+        """
+        批量调用 AI 扩展关键词的同义词
+
+        Args:
+            keywords: 需要扩展的关键词列表
+
+        Returns:
+            {关键词: [同义词1, 同义词2, ...]}
+        """
+        if not keywords:
+            return {}
+
+        logger.info(f"[RECOMMEND] AI expanding keywords: {keywords}")
+
+        try:
+            from backend.utils.text_client import get_text_chat_client
+            from backend.config import Config
+
+            text_config = Config.get_text_provider_config()
+            text_client = get_text_chat_client(text_config)
+
+            # 构建 Prompt - 严格约束只输出同义词
+            prompt = self._build_synonym_expansion_prompt(keywords)
+
+            response = text_client.generate_text(
+                prompt=prompt,
+                temperature=0.3,  # 低温度，确保输出稳定
+                max_output_tokens=2000,
+                timeout=30
+            )
+
+            # 解析响应
+            result = self._parse_synonym_response(response, keywords)
+            logger.info(f"[RECOMMEND] AI expanded result: {result}")
+            return result
+
+        except Exception as e:
+            logger.error(f"[RECOMMEND] AI synonym expansion failed: {e}")
+            return {}
+
+    def _build_synonym_expansion_prompt(self, keywords: List[str]) -> str:
+        """
+        构建同义词扩展的 Prompt，严格约束输出格式
+        """
+        keywords_str = '\n'.join([f'- {kw}' for kw in keywords])
+        return f"""你是一个专业的中文同义词专家。请为以下关键词提供同义词和近义词。
+
+## 要求：
+1. 只返回**同义词/近义词**，不要返回反义词、相关词
+2. 同义词应该是在搜索时可以互换使用的词
+3. 每个关键词返回 3-8 个同义词即可
+4. 保持口语化，适合小红书平台
+
+## 需要扩展的关键词：
+{keywords_str}
+
+## 输出格式（严格遵守 JSON 格式，不要添加其他文字）：
+```json
+{{
+  "关键词1": ["同义词1", "同义词2", "同义词3"],
+  "关键词2": ["同义词1", "同义词2"]
+}}
+```
+"""
+
+    def _parse_synonym_response(self, response: str, original_keywords: List[str]) -> Dict[str, List[str]]:
+        """
+        解析 AI 的同义词响应
+        """
+        import re
+
+        try:
+            # 尝试提取 JSON
+            json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', response)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response.strip()
+
+            import json
+            result = json.loads(json_str)
+
+            # 验证结果
+            validated = {}
+            for kw in original_keywords:
+                if kw in result and isinstance(result[kw], list):
+                    # 过滤掉空字符串和太长的词
+                    synonyms = [s.strip() for s in result[kw] if s.strip() and len(s) <= 10]
+                    if synonyms:
+                        validated[kw] = synonyms
+
+            return validated
+
+        except Exception as e:
+            logger.warning(f"[RECOMMEND] Failed to parse synonym response: {e}")
+            return {}
 
 
 # 全局服务实例
