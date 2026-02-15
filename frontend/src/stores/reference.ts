@@ -45,6 +45,7 @@ export interface ReferenceState {
 
   // 加载状态
   loading: boolean
+  loadingRecord: boolean  // Separate loading state for single record fetch
   error: string | null
 
   // 当前筛选条件
@@ -78,6 +79,7 @@ export const useReferenceStore = defineStore('reference', {
 
     // 加载状态
     loading: false,
+    loadingRecord: false,  // Separate loading state for single record fetch
     error: null,
 
     // 当前筛选条件
@@ -201,7 +203,7 @@ export const useReferenceStore = defineStore('reference', {
      * 获取单条记录详情
      */
     async fetchRecord(recordId: string) {
-      this.loading = true
+      this.loadingRecord = true
       this.error = null
 
       try {
@@ -220,7 +222,7 @@ export const useReferenceStore = defineStore('reference', {
         this.error = e.message || '获取记录详情失败'
         return null
       } finally {
-        this.loading = false
+        this.loadingRecord = false
       }
     },
 

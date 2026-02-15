@@ -143,22 +143,45 @@ def create_reference_blueprint():
         - record: 完整的记录数据
         """
         try:
-            # Get workspace configuration (support query parameter, fallback to active workspace)
+            # Get all available workspace names
+            feishu_config = Config.load_feishu_providers_config()
+            all_workspace_names = list(feishu_config.get('workspaces', {}).keys())
+
+            # Start with the requested or active workspace
             workspace_name = request.args.get('workspace')
             if not workspace_name:
                 workspace_name = Config.get_active_feishu_workspace()
-            workspace_config = Config.get_feishu_workspace_config(workspace_name)
 
-            # Configure service
+            # Create ordered list: try requested/active first, then others
+            workspaces_to_try = [workspace_name]
+            for ws in all_workspace_names:
+                if ws != workspace_name:
+                    workspaces_to_try.append(ws)
+
+            logger.info(f"[REFERENCE] Trying to find record {record_id} in workspaces: {workspaces_to_try}")
+
+            # Try each workspace in order
             service = get_feishu_service()
-            service.configure(workspace_name, workspace_config)
+            record = None
+            found_workspace = None
 
-            record = service.get_record(record_id)
+            for ws_name in workspaces_to_try:
+                try:
+                    workspace_config = Config.get_feishu_workspace_config(ws_name)
+                    service.configure(ws_name, workspace_config)
+                    record = service.get_record(record_id)
+                    if record:
+                        found_workspace = ws_name
+                        logger.info(f"[REFERENCE] Found record {record_id} in workspace: {ws_name}")
+                        break
+                except Exception as ws_error:
+                    logger.warning(f"[REFERENCE] Failed to fetch from workspace {ws_name}: {ws_error}")
+                    continue
 
             if not record:
                 return jsonify({
                     "success": False,
-                    "error": f"对标文案记录不存在：{record_id}"
+                    "error": f"对标文案记录不存在：{record_id} (tried workspaces: {workspaces_to_try})"
                 }), 404
 
             return jsonify({

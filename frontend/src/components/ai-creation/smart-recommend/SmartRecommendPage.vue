@@ -32,7 +32,7 @@ async function handleSearch(topic: string, scenario?: ScenarioType) {
 }
 
 function handleViewDetail(recordId: string) {
-  router.push({ name: 'reference', query: { id: recordId } })
+  router.push({ name: 'reference', query: { record: recordId } })
 }
 
 function handleApply(recordId: string) {

@@ -463,7 +463,7 @@ onMounted(async () => {
   await store.fetchRecords()
 
   // 检查 URL 查询参数中是否有 record 参数，如果有则自动显示详情
-  const recordIdFromQuery = route.query.record as string | undefined
+  const recordIdFromQuery = (route.query.record || route.query.id) as string | undefined
   if (recordIdFromQuery) {
     console.log('[ReferenceView] Found record in query params:', recordIdFromQuery)
     await handleShowDetail(recordIdFromQuery)
