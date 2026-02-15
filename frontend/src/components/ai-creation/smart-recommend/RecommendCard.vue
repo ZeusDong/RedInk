@@ -13,7 +13,15 @@
       <div class="card-body">
         <!-- 封面图 -->
         <div class="cover-image">
-          <img :src="record.cover_url" :alt="record.title" />
+          <img
+            :src="record.cover_url || record.cover_image"
+            :alt="record.title"
+            @error="handleImageError"
+          />
+          <div v-if="imageError" class="cover-placeholder">
+            <span class="placeholder-icon">📷</span>
+            <span class="placeholder-text">暂无封面</span>
+          </div>
         </div>
 
         <!-- 标题 -->
@@ -88,6 +96,7 @@ const emit = defineEmits<{
 }>()
 
 const expanded = ref(false)
+const imageError = ref(false)
 
 function toggleExpanded() {
   expanded.value = !expanded.value
@@ -118,6 +127,10 @@ function handleViewDetail() {
 
 function handleApply() {
   emit('apply', props.recordId)
+}
+
+function handleImageError() {
+  imageError.value = true
 }
 </script>
 
@@ -194,6 +207,27 @@ function handleApply() {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.cover-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+  color: #999;
+  gap: 8px;
+}
+
+.placeholder-icon {
+  font-size: 32px;
+  opacity: 0.6;
+}
+
+.placeholder-text {
+  font-size: 13px;
 }
 
 .record-title {

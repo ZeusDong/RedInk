@@ -23,6 +23,7 @@ export interface LearnableElements {
 export interface RecommendationRecord {
   title: string
   cover_url: string
+  cover_image?: string  // 兼容后端字段名
   industry: string
   metrics: {
     likes: number

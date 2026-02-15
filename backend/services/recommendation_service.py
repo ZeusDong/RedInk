@@ -401,6 +401,12 @@ class RecommendationServiceV2:
                     # 添加分析内容
                     record['analysis_content'] = row['content']
 
+                    # 兼容处理：cover_image -> cover_url（前端期望 cover_url）
+                    if 'cover_image' in record and 'cover_url' not in record:
+                        record['cover_url'] = record['cover_image']
+                    elif 'cover_url' in record and 'cover_image' not in record:
+                        record['cover_image'] = record['cover_url']
+
                     # 从数据库读取预计算的推荐洞察
                     if row['recommend_reasons']:
                         try:
