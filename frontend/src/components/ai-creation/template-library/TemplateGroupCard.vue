@@ -125,8 +125,8 @@ function handleCoverError(event: Event) {
 
 function handleViewSource() {
   router.push({
-    name: 'HistoryDetail',
-    params: { id: props.group.source_record_id }
+    name: 'reference',
+    query: { record: props.group.source_record_id }
   })
 }
 
