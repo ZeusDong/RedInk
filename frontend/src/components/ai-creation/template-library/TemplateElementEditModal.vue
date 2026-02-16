@@ -91,6 +91,7 @@ const isSaveEnabled = computed(() => {
   return formData.value.name.trim() && formData.value.content.trim() && !saving.value
 })
 
+// 监听 element 变化，immediate: true 确保组件挂载时立即执行
 watch(() => props.element, (newElement) => {
   if (newElement) {
     formData.value = {
@@ -111,15 +112,20 @@ function handleClose() {
   emit('close')
 }
 
-function handleSave() {
+async function handleSave() {
   if (!isSaveEnabled.value) return
 
-  emit('save', {
-    name: formData.value.name,
-    description: formData.value.description,
-    content: formData.value.content,
-    examples: formData.value.examples
-  })
+  saving.value = true
+  try {
+    emit('save', {
+      name: formData.value.name,
+      description: formData.value.description,
+      content: formData.value.content,
+      examples: formData.value.examples
+    })
+  } finally {
+    saving.value = false
+  }
 }
 </script>
 
