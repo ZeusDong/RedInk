@@ -101,7 +101,7 @@ watch(() => props.element, (newElement) => {
     }
     examplesText.value = newElement.examples.join('\n')
   }
-})
+}, { immediate: true })
 
 watch(examplesText, (newText) => {
   formData.value.examples = newText.split('\n').filter(line => line.trim())
