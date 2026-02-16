@@ -1,8 +1,9 @@
 // frontend/src/stores/template.ts
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import type { ExtractedTemplate } from '@/types/template'
 
-export type TemplateType = 'title' | 'structure' | 'visual'
+export type TemplateType = 'title' | 'structure' | 'visual' | 'composite'
 
 export interface Template {
   id: string
@@ -16,6 +17,13 @@ export interface Template {
   created_at?: string
   description?: string
   examples?: string[]
+  source_record_id?: string
+  extracted_elements?: {
+    title_template?: string
+    structure_template?: string
+    tone_style?: string
+    cta_type?: string
+  }
 }
 
 export interface TemplateState {
@@ -166,6 +174,24 @@ export const useTemplateStore = defineStore('template', () => {
     return templates.value.find(t => t.id === id)
   }
 
+  async function extractTemplate(recordId: string): Promise<ExtractedTemplate | null> {
+    try {
+      const response = await fetch('/api/templates/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record_id: recordId })
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        return data.data
+      }
+    } catch (error) {
+      console.error('提取模板失败:', error)
+    }
+    return null
+  }
+
   return {
     // State
     templates,
@@ -184,6 +210,7 @@ export const useTemplateStore = defineStore('template', () => {
     deleteTemplate,
     setTypeFilter,
     setIndustryFilter,
-    getTemplateById
+    getTemplateById,
+    extractTemplate
   }
 })

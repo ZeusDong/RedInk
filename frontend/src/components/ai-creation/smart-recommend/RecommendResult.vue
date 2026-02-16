@@ -48,6 +48,7 @@
           :learnable-elements="item.learnable_elements"
           @view-detail="handleViewDetail"
           @apply="handleApply"
+          @save-template="handleSaveTemplate"
         />
       </div>
     </Transition>
@@ -77,6 +78,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   viewDetail: [recordId: string]
   apply: [recordId: string]
+  saveTemplate: [recordId: string, record: any]
 }>()
 
 const sortBy = ref<'relevance' | 'heat' | 'likes'>('relevance')
@@ -140,6 +142,10 @@ function handleViewDetail(recordId: string) {
 
 function handleApply(recordId: string) {
   emit('apply', recordId)
+}
+
+function handleSaveTemplate(recordId: string, record: any) {
+  emit('saveTemplate', recordId, record)
 }
 </script>
 

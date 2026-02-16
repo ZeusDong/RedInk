@@ -58,8 +58,11 @@
           <button @click="handleViewDetail" class="action-btn secondary">
             查看详情
           </button>
-          <button @click="handleApply" class="action-btn primary">
-            应用到创作
+          <button @click="handleApply" class="action-btn primary-outline">
+            ✨ 作为参考
+          </button>
+          <button @click="handleSaveAsTemplate" class="action-btn primary">
+            📋 保存为模板
           </button>
         </div>
       </div>
@@ -93,6 +96,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   viewDetail: [recordId: string]
   apply: [recordId: string]
+  saveTemplate: [recordId: string, record: Props['record']]
 }>()
 
 const expanded = ref(false)
@@ -127,6 +131,10 @@ function handleViewDetail() {
 
 function handleApply() {
   emit('apply', props.recordId)
+}
+
+function handleSaveAsTemplate() {
+  emit('saveTemplate', props.recordId, props.record)
 }
 
 function handleImageError() {
@@ -312,10 +320,12 @@ function handleImageError() {
   display: flex;
   gap: 8px;
   margin-top: 4px;
+  flex-wrap: wrap;
 }
 
 .action-btn {
   flex: 1;
+  min-width: 80px;
   padding: 10px;
   border-radius: 8px;
   font-size: 13px;
@@ -333,6 +343,16 @@ function handleImageError() {
 .action-btn.secondary:hover {
   border-color: var(--primary, #ff2442);
   color: var(--primary, #ff2442);
+}
+
+.action-btn.primary-outline {
+  border: 1px solid var(--primary, #ff2442);
+  background: white;
+  color: var(--primary, #ff2442);
+}
+
+.action-btn.primary-outline:hover {
+  background: rgba(255, 36, 66, 0.05);
 }
 
 .action-btn.primary {

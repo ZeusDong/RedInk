@@ -452,3 +452,192 @@ def calculate_final_score(scores: Dict[str, Any]) -> float:
         scores.get('performance_bonus', 0) * 0.1,
         2
     )
+
+
+def format_template_extraction_prompt(
+    title: str,
+    industry: str,
+    analysis_content: str,
+    learnable_elements: Dict[str, str]
+) -> str:
+    """
+    格式化模板提取提示词
+
+    Args:
+        title: 笔记标题
+        industry: 行业
+        analysis_content: AI 分析结果
+        learnable_elements: 已有的可学习元素
+
+    Returns:
+        完整的 AI 提示词
+    """
+    hook = learnable_elements.get('hook', '')
+    structure = learnable_elements.get('structure', '')
+    tone = learnable_elements.get('tone', '')
+    cta = learnable_elements.get('cta', '')
+
+    prompt = f"""你是一位专业的小红书模板提取专家，擅长从优质笔记中提炼可复用的模板元素。
+
+## 笔记基本信息
+- 标题：{title}
+- 行业：{industry}
+
+## 可学习元素（已有提炼）
+- 钩子类型：{hook}
+- 结构框架：{structure}
+- 语言风格：{tone}
+- 互动设计：{cta}
+
+## AI 深度分析
+{analysis_content}
+
+## 任务要求
+请基于以上信息，提取以下模板元素：
+
+### 1. 建议模板名称（suggested_name）
+根据笔记内容和风格，给出一个简洁的模板名称，不超过20字。
+格式：[行业] + [风格] + 模板，例如："护肤亲切闺蜜风模板"
+
+### 2. 标题模板（title_template）
+提炼标题的创作模式，可以包含占位符，例如：
+- "三个{主题}技巧，让你{效果}"
+- "{主题}的{数字}个秘密"
+
+### 3. 结构模板（structure_template）
+提炼内容结构框架，描述整体的内容组织方式，例如：
+- "痛点提问 → 解决方案 → 分点说明 → 总结互动"
+- "开头钩子 → 产品介绍 → 使用教程 → 效果展示"
+
+### 4. 语言风格描述（tone_style）
+详细描述这篇笔记的语言风格特点，50字以内，例如：
+- "亲切闺蜜聊天风格，使用大量表情符号，口语化表达"
+- "专业干货风格，逻辑清晰，数据详实，用词精准"
+
+### 5. 互动设计类型（cta_type）
+提炼互动引导的方式，30字以内，例如：
+- "提问引导评论，点赞收藏提醒"
+- "投票选择，@好友互动"
+
+## 输出格式
+请严格按照以下 JSON 格式输出（不要添加任何其他文字）：
+
+```json
+{{
+  "suggested_name": "建议模板名称",
+  "title_template": "标题模板（可选）",
+  "structure_template": "结构模板（可选）",
+  "tone_style": "语言风格描述（可选）",
+  "cta_type": "互动设计类型（可选）",
+  "elements": [
+    {{
+      "type": "title",
+      "name": "标题模板",
+      "description": "简短描述（不超过30字）",
+      "selected": true
+    }},
+    {{
+      "type": "structure",
+      "name": "结构框架",
+      "description": "简短描述（不超过30字）",
+      "selected": true
+    }},
+    {{
+      "type": "tone",
+      "name": "语言风格",
+      "description": "简短描述（不超过30字）",
+      "selected": true
+    }},
+    {{
+      "type": "cta",
+      "name": "互动设计",
+      "description": "简短描述（不超过30字）",
+      "selected": true
+    }}
+  ]
+}}
+```
+
+## 注意事项
+1. 必须基于分析结果，不要编造
+2. 模板要具有普适性，可以复用到同类内容
+3. 语言要简洁、准确、可操作
+4. JSON 必须有效且符合格式
+5. 如果某个元素无法提炼，可以返回 null 或空字符串
+"""
+    return prompt
+
+
+def parse_template_extraction_response(response: str) -> Dict[str, Any]:
+    """
+    解析 AI 返回的模板提取结果
+
+    Args:
+        response: AI 返回的文本
+
+    Returns:
+        解析后的结构化数据
+    """
+    import json
+    import re
+
+    # 尝试直接解析 JSON
+    try:
+        # 提取 JSON 代码块
+        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            # 尝试找纯 JSON
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                json_str = json_match.group(0)
+            else:
+                json_str = response
+
+        data = json.loads(json_str)
+
+        # 验证必需字段
+        if 'suggested_name' not in data:
+            raise ValueError("Missing suggested_name in AI response")
+
+        # 确保 elements 存在且格式正确
+        if 'elements' not in data or not isinstance(data['elements'], list):
+            # 默认元素列表
+            data['elements'] = [
+                {'type': 'title', 'name': '标题模板', 'description': '标题创作模式', 'selected': True},
+                {'type': 'structure', 'name': '结构框架', 'description': '内容组织方式', 'selected': True},
+                {'type': 'tone', 'name': '语言风格', 'description': '表达风格特点', 'selected': True},
+                {'type': 'cta', 'name': '互动设计', 'description': '互动引导方式', 'selected': True}
+            ]
+
+        return data
+
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"Failed to parse template extraction response: {e}, using fallback")
+        return fallback_template_extraction(response)
+
+
+def fallback_template_extraction(response: str) -> Dict[str, Any]:
+    """
+    降级策略：返回默认模板数据
+
+    Args:
+        response: AI 返回的文本
+
+    Returns:
+        结构化数据
+    """
+    return {
+        'suggested_name': '优质内容模板',
+        'title_template': '',
+        'structure_template': '',
+        'tone_style': '',
+        'cta_type': '',
+        'elements': [
+            {'type': 'title', 'name': '标题模板', 'description': '标题创作模式', 'selected': True},
+            {'type': 'structure', 'name': '结构框架', 'description': '内容组织方式', 'selected': True},
+            {'type': 'tone', 'name': '语言风格', 'description': '表达风格特点', 'selected': True},
+            {'type': 'cta', 'name': '互动设计', 'description': '互动引导方式', 'selected': True}
+        ]
+    }

@@ -214,5 +214,55 @@ def create_template_blueprint():
                 'error': str(e)
             }), 500
 
+    @bp.route('/templates/extract', methods=['POST'])
+    def extract_template():
+        """
+        从历史记录中提取模板元素
+
+        请求体:
+        {
+            "record_id": "xxx"
+        }
+
+        Returns:
+        {
+            "success": true,
+            "data": {
+                "suggested_name": "护肤亲切闺蜜风模板",
+                "title_template": "...",
+                "structure_template": "...",
+                "tone_style": "...",
+                "cta_type": "...",
+                "elements": [...]
+            }
+        }
+        """
+        try:
+            data = request.get_json()
+            record_id = data.get('record_id')
+
+            if not record_id:
+                return jsonify({
+                    'success': False,
+                    'error': '缺少 record_id'
+                }), 400
+
+            service = get_template_service()
+            template_data = service.extract_template_from_record(record_id)
+
+            logger.info(f"📋 提取模板: record_id={record_id}")
+
+            return jsonify({
+                'success': True,
+                'data': template_data
+            })
+
+        except Exception as e:
+            logger.error(f"❌ 提取模板失败: {e}", exc_info=True)
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+
     logger.debug("✅ Template routes registered")
     return bp
