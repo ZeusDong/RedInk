@@ -31,6 +31,16 @@
               </div>
             </div>
 
+            <!-- Initial State - Waiting for user to click extract -->
+            <div v-if="!loading && !extractedData && !error" class="initial-section">
+              <div class="initial-icon">✨</div>
+              <h3>提取创作技巧</h3>
+              <p class="initial-text">点击下方按钮，AI 将分析这篇笔记并提取可复用的创作技巧</p>
+              <button @click="extractTemplate" class="extract-btn" :disabled="extracting">
+                {{ extracting ? '提取中...' : '🔍 开始提取技巧' }}
+              </button>
+            </div>
+
             <!-- Loading State -->
             <div v-if="loading" class="loading-section">
               <div class="skeleton-loader">
@@ -147,6 +157,7 @@ const templateGroupStore = useTemplateGroupStore()
 
 // State
 const loading = ref(false)
+const extracting = ref(false)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const extractedData = ref<any>(null)
@@ -170,16 +181,15 @@ const saveHintText = computed(() => {
   return ''
 })
 
-// Watch for visible changes to extract template
-watch(() => props.visible, async (newVisible) => {
-  if (newVisible && props.recordId) {
-    await extractTemplate()
-  } else if (!newVisible) {
+// Watch for visible changes to reset state
+watch(() => props.visible, (newVisible) => {
+  if (!newVisible) {
     resetState()
   }
 })
 
 async function extractTemplate() {
+  extracting.value = true
   loading.value = true
   error.value = null
   extractedData.value = null
@@ -203,6 +213,7 @@ async function extractTemplate() {
     console.error('Extract template error:', err)
   } finally {
     loading.value = false
+    extracting.value = false
   }
 }
 
@@ -284,6 +295,7 @@ async function handleSave() {
 
 function resetState() {
   loading.value = false
+  extracting.value = false
   saving.value = false
   error.value = null
   extractedData.value = null
@@ -375,6 +387,53 @@ function getElementIcon(type: string): string {
   padding: 24px;
   overflow-y: auto;
   flex: 1;
+}
+
+.initial-section {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.initial-icon {
+  font-size: 56px;
+  margin-bottom: 16px;
+}
+
+.initial-section h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 8px 0;
+}
+
+.initial-text {
+  font-size: 14px;
+  color: #666;
+  margin: 0 0 24px 0;
+  line-height: 1.5;
+}
+
+.extract-btn {
+  padding: 12px 32px;
+  border: none;
+  background: linear-gradient(135deg, #ff2442 0%, #ff4d66 100%);
+  color: white;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.extract-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #e61f37 0%, #ff2442 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.3);
+}
+
+.extract-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .record-preview {
