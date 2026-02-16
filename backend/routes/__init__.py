@@ -45,6 +45,7 @@ def create_api_blueprint():
     from .summary_routes import create_summary_blueprint
     from .recommendation_routes import create_recommendation_blueprint
     from .template_routes import create_template_blueprint
+    from .template_group_routes import create_template_group_blueprint
     from .optimizer_routes import create_optimizer_blueprint
 
     # 显式捕获 analysis_routes 导入错误
@@ -83,6 +84,8 @@ def create_api_blueprint():
     logger.debug("   ✅ recommendation_routes registered")
     api_bp.register_blueprint(create_template_blueprint())
     logger.debug("   ✅ template_routes registered")
+    api_bp.register_blueprint(create_template_group_blueprint())
+    logger.debug("   ✅ template_group_routes registered")
     api_bp.register_blueprint(create_optimizer_blueprint())
     logger.debug("   ✅ optimizer_routes registered")
 
