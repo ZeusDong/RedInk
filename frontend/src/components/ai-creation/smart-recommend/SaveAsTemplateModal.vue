@@ -124,56 +124,28 @@
                     rows="2"
                   ></textarea>
                 </div>
-
-                <!-- Advanced Options -->
-                <div class="advanced-section">
-                  <button
-                    @click="advancedCollapsed = !advancedCollapsed"
-                    class="advanced-toggle"
-                    type="button"
-                  >
-                    <span class="advanced-icon">🛠️</span>
-                    <span>高级选项</span>
-                    <span class="advanced-arrow">{{ advancedCollapsed ? '▼' : '▲' }}</span>
-                  </button>
-
-                  <Transition name="collapse">
-                    <div v-show="!advancedCollapsed" class="advanced-options">
-                      <label class="advanced-option">
-                        <input type="checkbox" v-model="advancedOptions.saveTitle" />
-                        <span>保存标题模板</span>
-                      </label>
-                      <label class="advanced-option">
-                        <input type="checkbox" v-model="advancedOptions.saveStructure" />
-                        <span>保存结构框架</span>
-                      </label>
-                      <label class="advanced-option">
-                        <input type="checkbox" v-model="advancedOptions.saveTone" />
-                        <span>保存语言风格</span>
-                      </label>
-                      <label class="advanced-option">
-                        <input type="checkbox" v-model="advancedOptions.saveCta" />
-                        <span>保存互动设计</span>
-                      </label>
-                    </div>
-                  </Transition>
-                </div>
               </div>
             </div>
           </div>
 
           <!-- Footer -->
           <div class="modal-footer">
-            <button @click="handleClose" class="footer-btn secondary" :disabled="saving">
-              取消
-            </button>
-            <button
-              @click="handleSave"
-              class="footer-btn primary"
-              :disabled="!canSave || saving"
-            >
-              {{ saving ? '保存中...' : '保存模板' }}
-            </button>
+            <div class="footer-hint" v-if="showSaveHint">
+              <span class="hint-icon">⚠️</span>
+              <span class="hint-text">{{ saveHintText }}</span>
+            </div>
+            <div class="footer-buttons">
+              <button @click="handleClose" class="footer-btn secondary" :disabled="saving">
+                取消
+              </button>
+              <button
+                @click="handleSave"
+                class="footer-btn primary"
+                :disabled="!isSaveEnabled || saving"
+              >
+                {{ saving ? '保存中...' : '保存模板' }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -184,7 +156,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useTemplateStore } from '@/stores/template'
-import type { ExtractedTemplate, ExtractedTemplateElement } from '@/types/template'
+import type { ExtractedTemplate } from '@/types/template'
 
 interface Props {
   visible: boolean
@@ -212,7 +184,6 @@ const saving = ref(false)
 const error = ref<string | null>(null)
 const extractedData = ref<ExtractedTemplate | null>(null)
 const elementsCollapsed = ref(false)
-const advancedCollapsed = ref(true)
 const coverError = ref(false)
 
 // Form data
@@ -220,13 +191,6 @@ const formData = ref({
   name: '',
   industry: '',
   description: ''
-})
-
-const advancedOptions = ref({
-  saveTitle: true,
-  saveStructure: true,
-  saveTone: true,
-  saveCta: true
 })
 
 // Industries (could be fetched from API)
@@ -244,14 +208,23 @@ const industries = ref([
   '其他'
 ])
 
-const canSave = computed(() => {
-  return (
-    !loading &&
-    !saving &&
-    extractedData.value !== null &&
-    formData.value.name.trim().length > 0 &&
-    formData.value.industry.length > 0
-  )
+const isSaveEnabled = computed(() => {
+  const hasData = extractedData.value !== null
+  const hasName = formData.value.name.trim().length > 0
+  const hasIndustry = formData.value.industry.length > 0
+  const notLoading = !loading.value && !saving.value
+  return hasData && hasName && hasIndustry && notLoading
+})
+
+const showSaveHint = computed(() => {
+  return extractedData.value !== null && !isSaveEnabled.value
+})
+
+const saveHintText = computed(() => {
+  if (!extractedData.value) return ''
+  if (!formData.value.name.trim()) return '请输入模板名称'
+  if (!formData.value.industry) return '请选择适用行业'
+  return ''
 })
 
 // Watch for visible changes to extract template
@@ -278,6 +251,13 @@ async function extractTemplate() {
   try {
     const result = await templateStore.extractTemplate(props.recordId)
     if (result) {
+      // 确保 elements 数组中的每个元素都有 selected 字段
+      if (result.elements && Array.isArray(result.elements)) {
+        result.elements = result.elements.map((element: any) => ({
+          ...element,
+          selected: element.selected !== false // 默认 true
+        }))
+      }
       extractedData.value = result
       formData.value.name = result.suggested_name || ''
     } else {
@@ -300,27 +280,28 @@ function handleClose() {
 }
 
 async function handleSave() {
-  if (!canSave.value || !extractedData.value) return
+  if (!isSaveEnabled.value || !extractedData.value) return
 
   saving.value = true
   try {
-    // Get selected elements
+    // Build extracted elements based on selected checkboxes
+    const extractedElements: any = {}
     const selectedElements = extractedData.value.elements.filter(e => e.selected)
 
-    // Build extracted elements based on advanced options and selections
-    const extractedElements: any = {}
-    if (advancedOptions.value.saveTitle && extractedData.value.title_template) {
-      extractedElements.title_template = extractedData.value.title_template
-    }
-    if (advancedOptions.value.saveStructure && extractedData.value.structure_template) {
-      extractedElements.structure_template = extractedData.value.structure_template
-    }
-    if (advancedOptions.value.saveTone && extractedData.value.tone_style) {
-      extractedElements.tone_style = extractedData.value.tone_style
-    }
-    if (advancedOptions.value.saveCta && extractedData.value.cta_type) {
-      extractedElements.cta_type = extractedData.value.cta_type
-    }
+    selectedElements.forEach(element => {
+      if (element.type === 'title' && extractedData.value!.title_template) {
+        extractedElements.title_template = extractedData.value!.title_template
+      }
+      if (element.type === 'structure' && extractedData.value!.structure_template) {
+        extractedElements.structure_template = extractedData.value!.structure_template
+      }
+      if (element.type === 'tone' && extractedData.value!.tone_style) {
+        extractedElements.tone_style = extractedData.value!.tone_style
+      }
+      if (element.type === 'cta' && extractedData.value!.cta_type) {
+        extractedElements.cta_type = extractedData.value!.cta_type
+      }
+    })
 
     const template = await templateStore.createTemplate({
       name: formData.value.name,
@@ -352,18 +333,11 @@ function resetState() {
   error.value = null
   extractedData.value = null
   elementsCollapsed.value = false
-  advancedCollapsed.value = true
   coverError.value = false
   formData.value = {
     name: '',
     industry: props.record?.industry || '',
     description: ''
-  }
-  advancedOptions.value = {
-    saveTitle: true,
-    saveStructure: true,
-    saveTone: true,
-    saveCta: true
   }
 }
 
@@ -719,71 +693,37 @@ function getElementIcon(type: string): string {
   resize: vertical;
 }
 
-.advanced-section {
-  border: 1px solid #e8e8e8;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.advanced-toggle {
-  width: 100%;
-  padding: 14px 16px;
-  border: none;
-  background: white;
-  color: #333;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: background 0.2s;
-}
-
-.advanced-toggle:hover {
-  background: #f9f9f9;
-}
-
-.advanced-icon {
-  font-size: 18px;
-}
-
-.advanced-arrow {
-  margin-left: auto;
-  font-size: 12px;
-  color: #999;
-}
-
-.advanced-options {
-  padding: 12px 16px;
-  background: #f9f9f9;
-  border-top: 1px solid #f0f0f0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.advanced-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  font-size: 14px;
-  color: #333;
-}
-
-.advanced-option input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--primary, #ff2442);
-}
-
 .modal-footer {
   display: flex;
+  flex-direction: column;
   gap: 12px;
   padding: 20px 24px;
   border-top: 1px solid #f0f0f0;
   background: #fafafa;
+}
+
+.footer-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: 8px;
+}
+
+.hint-icon {
+  font-size: 14px;
+}
+
+.hint-text {
+  font-size: 13px;
+  color: #d46b08;
+}
+
+.footer-buttons {
+  display: flex;
+  gap: 12px;
 }
 
 .footer-btn {
