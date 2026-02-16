@@ -252,7 +252,7 @@ def format_match_score_display(score: float) -> str:
     Returns:
         显示文本
     """
-    if score >= 0.7:
+    if score >= 0.65:
         return "🔥 高度匹配"
     elif score >= 0.4:
         return "📌 相关推荐"
@@ -272,7 +272,7 @@ def calculate_match_level(score: float) -> str:
     Returns:
         匹配等级: high | medium | low
     """
-    if score >= 0.7:
+    if score >= 0.65:
         return 'high'
     elif score >= 0.4:
         return 'medium'

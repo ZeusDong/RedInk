@@ -559,7 +559,7 @@ class RecommendationServiceV2:
 
     def _calculate_match_level(self, score: float) -> str:
         """计算匹配等级"""
-        if score >= 0.7:
+        if score >= 0.65:
             return 'high'
         elif score >= 0.4:
             return 'medium'
