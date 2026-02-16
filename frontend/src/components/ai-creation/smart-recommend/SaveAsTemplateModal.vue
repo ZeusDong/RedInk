@@ -7,7 +7,7 @@
           <div class="modal-header">
             <div class="header-title">
               <span class="icon">📋</span>
-              <h3>保存为模板</h3>
+              <h3>保存为创作技巧</h3>
             </div>
             <button @click="handleClose" class="close-btn" aria-label="关闭">
               ×
@@ -40,7 +40,7 @@
                 <div class="skeleton-item"></div>
                 <div class="skeleton-item"></div>
               </div>
-              <p class="loading-text">AI 正在分析笔记并提取模板元素...</p>
+              <p class="loading-text">AI 正在分析笔记并提取创作技巧...</p>
             </div>
 
             <!-- Error State -->
@@ -58,7 +58,7 @@
               <div class="elements-card" :class="{ collapsed: elementsCollapsed }">
                 <div class="elements-header">
                   <span class="elements-icon">✨</span>
-                  <span class="elements-title">AI 已提取以下元素</span>
+                  <span class="elements-title">AI 已提取以下创作技巧</span>
                 </div>
 
                 <Transition name="collapse">
@@ -87,43 +87,10 @@
                 </button>
               </div>
 
-              <!-- Template Form -->
-              <div class="form-section">
-                <div class="form-group">
-                  <label for="templateName">模板名称</label>
-                  <input
-                    id="templateName"
-                    v-model="formData.name"
-                    type="text"
-                    class="form-input"
-                    placeholder="请输入模板名称"
-                  />
-                </div>
-
-                <div class="form-group">
-                  <label for="templateIndustry">适用行业</label>
-                  <select
-                    id="templateIndustry"
-                    v-model="formData.industry"
-                    class="form-select"
-                  >
-                    <option value="">请选择行业</option>
-                    <option v-for="ind in industries" :key="ind" :value="ind">
-                      {{ ind }}
-                    </option>
-                  </select>
-                </div>
-
-                <div class="form-group">
-                  <label for="templateDesc">备注（可选）</label>
-                  <textarea
-                    id="templateDesc"
-                    v-model="formData.description"
-                    class="form-textarea"
-                    placeholder="添加一些备注说明..."
-                    rows="2"
-                  ></textarea>
-                </div>
+              <!-- Hint -->
+              <div class="hint-section">
+                <span class="hint-icon">💡</span>
+                <span class="hint-text">这些技巧将按原笔记分组保存到模板库，方便以后参考学习</span>
               </div>
             </div>
           </div>
@@ -143,7 +110,7 @@
                 class="footer-btn primary"
                 :disabled="!isSaveEnabled || saving"
               >
-                {{ saving ? '保存中...' : '保存模板' }}
+                {{ saving ? '保存中...' : '保存技巧' }}
               </button>
             </div>
           </div>
@@ -155,8 +122,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useTemplateStore } from '@/stores/template'
-import type { ExtractedTemplate } from '@/types/template'
+import { useTemplateGroupStore } from '@/stores/templateGroup'
 
 interface Props {
   visible: boolean
@@ -166,6 +132,7 @@ interface Props {
     cover_url?: string
     cover_image?: string
     industry?: string
+    match_score?: number
   }
 }
 
@@ -173,47 +140,24 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{
   close: []
-  saved: [templateId: string]
+  saved: [groupId: string]
 }>()
 
-const templateStore = useTemplateStore()
+const templateGroupStore = useTemplateGroupStore()
 
 // State
 const loading = ref(false)
 const saving = ref(false)
 const error = ref<string | null>(null)
-const extractedData = ref<ExtractedTemplate | null>(null)
+const extractedData = ref<any>(null)
 const elementsCollapsed = ref(false)
 const coverError = ref(false)
 
-// Form data
-const formData = ref({
-  name: '',
-  industry: '',
-  description: ''
-})
-
-// Industries (could be fetched from API)
-const industries = ref([
-  '美妆护肤',
-  '服饰穿搭',
-  '美食探店',
-  '旅行攻略',
-  '家居生活',
-  '健身瑜伽',
-  '职场经验',
-  '情感心理',
-  '教育学习',
-  '科技数码',
-  '其他'
-])
-
 const isSaveEnabled = computed(() => {
   const hasData = extractedData.value !== null
-  const hasName = formData.value.name.trim().length > 0
-  const hasIndustry = formData.value.industry.length > 0
+  const hasSelectedElements = extractedData.value?.elements?.some((e: any) => e.selected)
   const notLoading = !loading.value && !saving.value
-  return hasData && hasName && hasIndustry && notLoading
+  return hasData && hasSelectedElements && notLoading
 })
 
 const showSaveHint = computed(() => {
@@ -222,8 +166,7 @@ const showSaveHint = computed(() => {
 
 const saveHintText = computed(() => {
   if (!extractedData.value) return ''
-  if (!formData.value.name.trim()) return '请输入模板名称'
-  if (!formData.value.industry) return '请选择适用行业'
+  if (!extractedData.value.elements?.some((e: any) => e.selected)) return '请至少选择一个技巧'
   return ''
 })
 
@@ -236,20 +179,13 @@ watch(() => props.visible, async (newVisible) => {
   }
 })
 
-// Watch for record to set default industry
-watch(() => props.record, (record) => {
-  if (record?.industry && !formData.value.industry) {
-    formData.value.industry = record.industry
-  }
-}, { immediate: true })
-
 async function extractTemplate() {
   loading.value = true
   error.value = null
   extractedData.value = null
 
   try {
-    const result = await templateStore.extractTemplate(props.recordId)
+    const result = await templateGroupStore.extractTemplateGroup(props.recordId)
     if (result) {
       // 确保 elements 数组中的每个元素都有 selected 字段
       if (result.elements && Array.isArray(result.elements)) {
@@ -259,12 +195,11 @@ async function extractTemplate() {
         }))
       }
       extractedData.value = result
-      formData.value.name = result.suggested_name || ''
     } else {
-      error.value = '提取模板失败，请重试'
+      error.value = '提取技巧失败，请重试'
     }
   } catch (err) {
-    error.value = '提取模板时发生错误'
+    error.value = '提取技巧时发生错误'
     console.error('Extract template error:', err)
   } finally {
     loading.value = false
@@ -280,48 +215,60 @@ function handleClose() {
 }
 
 async function handleSave() {
-  if (!isSaveEnabled.value || !extractedData.value) return
+  if (!isSaveEnabled.value || !extractedData.value || !props.record) return
 
   saving.value = true
   try {
-    // Build extracted elements based on selected checkboxes
-    const extractedElements: any = {}
-    const selectedElements = extractedData.value.elements.filter(e => e.selected)
+    // 构建技巧元素列表
+    const selectedElements = extractedData.value.elements.filter((e: any) => e.selected)
 
-    selectedElements.forEach(element => {
-      if (element.type === 'title' && extractedData.value!.title_template) {
-        extractedElements.title_template = extractedData.value!.title_template
+    // 将旧的提取格式转换为新模板组格式
+    const elements = selectedElements.map((element: any) => {
+      let content = ''
+      const examples: string[] = []
+
+      // 根据类型从 extractedData 获取对应内容
+      if (element.type === 'title' && extractedData.value.title_template) {
+        content = extractedData.value.title_template
+        examples.push(props.record!.title)
+      } else if (element.type === 'structure' && extractedData.value.structure_template) {
+        content = extractedData.value.structure_template
+      } else if (element.type === 'tone' && extractedData.value.tone_style) {
+        content = extractedData.value.tone_style
+      } else if (element.type === 'cta' && extractedData.value.cta_type) {
+        content = extractedData.value.cta_type
       }
-      if (element.type === 'structure' && extractedData.value!.structure_template) {
-        extractedElements.structure_template = extractedData.value!.structure_template
+
+      // 如果没有具体内容，使用描述作为内容
+      if (!content) {
+        content = element.description
       }
-      if (element.type === 'tone' && extractedData.value!.tone_style) {
-        extractedElements.tone_style = extractedData.value!.tone_style
-      }
-      if (element.type === 'cta' && extractedData.value!.cta_type) {
-        extractedElements.cta_type = extractedData.value!.cta_type
+
+      return {
+        type: element.type,
+        name: element.name,
+        description: element.description,
+        content: content,
+        examples: examples
       }
     })
 
-    const template = await templateStore.createTemplate({
-      name: formData.value.name,
-      industry: formData.value.industry,
-      type: 'composite',
-      description: formData.value.description || undefined,
+    const result = await templateGroupStore.createGroup({
       source_record_id: props.recordId,
-      extracted_elements: Object.keys(extractedElements).length > 0 ? extractedElements : undefined,
-      pattern: formData.value.name,
-      variables: [],
-      source_records: [props.recordId]
+      source_title: props.record.title,
+      source_industry: props.record.industry,
+      source_cover: props.record.cover_url || props.record.cover_image,
+      match_score: props.record.match_score,
+      elements: elements
     })
 
-    if (template) {
-      emit('saved', template.id)
+    if (result) {
+      emit('saved', result.group_id)
       emit('close')
     }
   } catch (err) {
-    console.error('Save template error:', err)
-    alert('保存模板失败，请重试')
+    console.error('Save template group error:', err)
+    alert('保存技巧失败，请重试')
   } finally {
     saving.value = false
   }
@@ -334,11 +281,6 @@ function resetState() {
   extractedData.value = null
   elementsCollapsed.value = false
   coverError.value = false
-  formData.value = {
-    name: '',
-    industry: props.record?.industry || '',
-    description: ''
-  }
 }
 
 function getElementIcon(type: string): string {
@@ -554,7 +496,7 @@ function getElementIcon(type: string): string {
 .extracted-section {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .elements-card {
@@ -653,44 +595,25 @@ function getElementIcon(type: string): string {
   font-size: 12px;
 }
 
-.form-section {
+.hint-section {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
-}
-
-.form-group label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
-}
-
-.form-input,
-.form-select,
-.form-textarea {
   padding: 12px 14px;
-  border: 1px solid #e0e0e0;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
   border-radius: 10px;
-  font-size: 14px;
-  transition: border-color 0.2s;
-  font-family: inherit;
 }
 
-.form-input:focus,
-.form-select:focus,
-.form-textarea:focus {
-  outline: none;
-  border-color: var(--primary, #ff2442);
+.hint-icon {
+  font-size: 16px;
+  flex-shrink: 0;
 }
 
-.form-textarea {
-  resize: vertical;
+.hint-text {
+  font-size: 13px;
+  color: #0c4a6e;
+  line-height: 1.5;
 }
 
 .modal-footer {

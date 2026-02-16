@@ -30,7 +30,7 @@ import { useRecommendationStore } from '@/stores/recommendation'
 import RecommendInput from './RecommendInput.vue'
 import RecommendResult from './RecommendResult.vue'
 import SaveAsTemplateModal from './SaveAsTemplateModal.vue'
-import type { ScenarioType } from '@/types/recommendation'
+import type { ScenarioType, RecommendationItem } from '@/types/recommendation'
 
 const router = useRouter()
 const recommendationStore = useRecommendationStore()
@@ -58,8 +58,16 @@ function handleApply(recordId: string) {
 }
 
 function handleSaveTemplate(recordId: string, record: any) {
+  // 找到完整的 recommendation item 来获取 match_score
+  const fullItem = recommendationStore.recommendations.find(
+    (item: RecommendationItem) => item.record_id === recordId
+  )
+
   selectedRecordId.value = recordId
-  selectedRecord.value = record
+  selectedRecord.value = {
+    ...record,
+    match_score: fullItem?.match_score
+  }
   showSaveModal.value = true
 }
 

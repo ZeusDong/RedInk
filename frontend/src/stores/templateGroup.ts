@@ -156,6 +156,61 @@ export const useTemplateGroupStore = defineStore('templateGroup', () => {
     return false
   }
 
+  async function createGroup(data: {
+    source_record_id: string
+    source_title: string
+    source_industry?: string
+    source_cover?: string
+    match_score?: number
+    elements: Array<{
+      type: 'title' | 'structure' | 'tone' | 'cta'
+      name: string
+      description: string
+      content: string
+      examples?: string[]
+    }>
+  }) {
+    try {
+      const response = await fetch('/api/template-groups', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        // 重新加载列表
+        await loadGroups()
+        return result.data
+      }
+    } catch (error) {
+      console.error('创建模板组失败:', error)
+    }
+    return null
+  }
+
+  async function extractTemplateGroup(recordId: string) {
+    try {
+      const response = await fetch('/api/templates/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ record_id: recordId })
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        return data.data
+      }
+    } catch (error) {
+      console.error('提取模板组失败:', error)
+    }
+    return null
+  }
+
   function setTypeFilter(type: 'all' | TemplateElementType) {
     selectedType.value = type
   }
@@ -192,6 +247,8 @@ export const useTemplateGroupStore = defineStore('templateGroup', () => {
     deleteGroup,
     deleteElement,
     applyElement,
+    createGroup,
+    extractTemplateGroup,
     setTypeFilter,
     setSearchQuery,
     setSortBy,
