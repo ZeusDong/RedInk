@@ -26,6 +26,9 @@
       <button class="action-btn preview-btn" @click="handlePreview">
         预览
       </button>
+      <button class="action-btn edit-btn" @click="handleEdit">
+        编辑
+      </button>
       <button class="action-btn apply-btn" @click="handleApply">
         应用
       </button>
@@ -50,6 +53,7 @@ interface Props {
 
 interface Emits {
   (e: 'preview', element: TemplateElement): void
+  (e: 'edit', element: TemplateElement): void
   (e: 'apply', element: TemplateElement): void
   (e: 'delete', element: TemplateElement): void
 }
@@ -77,6 +81,10 @@ const truncateContent = computed(() => {
 
 function handlePreview() {
   emit('preview', props.element)
+}
+
+function handleEdit() {
+  emit('edit', props.element)
 }
 
 function handleApply() {
@@ -196,6 +204,16 @@ function handleDelete() {
 .action-btn:hover {
   border-color: #ccc;
   background: #fafafa;
+}
+
+.edit-btn {
+  border-color: #666;
+  color: #666;
+}
+
+.edit-btn:hover {
+  background: #666;
+  color: white;
 }
 
 .apply-btn {

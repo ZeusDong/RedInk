@@ -217,5 +217,143 @@ def create_template_group_blueprint():
                 'error': str(e)
             }), 500
 
+    @bp.route('/template-groups/<group_id>', methods=['PUT'])
+    def update_template_group(group_id: str):
+        """
+        更新模板组基本信息
+
+        Args:
+            group_id: 模板组ID
+
+        请求体:
+        {
+          "source_title": "新标题",
+          "source_industry": "新行业"
+        }
+
+        响应:
+        {
+          "success": true,
+          "data": {...}
+        }
+        """
+        try:
+            data = request.get_json()
+            service = get_template_group_service()
+            group = service.update_group(group_id, data)
+
+            if group:
+                logger.info(f"📋 更新模板组: {group_id}")
+                return jsonify({
+                    'success': True,
+                    'data': group
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': '模板组不存在'
+                }), 404
+
+        except Exception as e:
+            logger.error(f"❌ 更新模板组失败: {e}", exc_info=True)
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+
+    @bp.route('/template-groups/<group_id>/elements/<element_id>', methods=['PUT'])
+    def update_template_element(group_id: str, element_id: str):
+        """
+        更新单个技巧
+
+        Args:
+            group_id: 模板组ID
+            element_id: 技巧ID
+
+        请求体:
+        {
+          "name": "新名称",
+          "description": "新描述",
+          "content": "新内容",
+          "examples": ["示例1", "示例2"]
+        }
+
+        响应:
+        {
+          "success": true,
+          "data": {...}
+        }
+        """
+        try:
+            data = request.get_json()
+            service = get_template_group_service()
+            element = service.update_element(group_id, element_id, data)
+
+            if element:
+                logger.info(f"📋 更新技巧: {element_id} from {group_id}")
+                return jsonify({
+                    'success': True,
+                    'data': element
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': '模板组或技巧不存在'
+                }), 404
+
+        except Exception as e:
+            logger.error(f"❌ 更新技巧失败: {e}", exc_info=True)
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+
+    @bp.route('/template-groups/<group_id>/elements', methods=['POST'])
+    def add_template_element(group_id: str):
+        """
+        添加新技巧到分组
+
+        Args:
+            group_id: 模板组ID
+
+        请求体:
+        {
+          "type": "title",
+          "name": "新技巧",
+          "description": "描述",
+          "content": "内容",
+          "examples": []
+        }
+
+        响应:
+        {
+          "success": true,
+          "data": {...}
+        }
+        """
+        try:
+            data = request.get_json()
+            service = get_template_group_service()
+            element = service.add_element(group_id, data)
+
+            if element:
+                logger.info(f"📋 添加新技巧到分组: {group_id}")
+                return jsonify({
+                    'success': True,
+                    'data': element
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': '模板组不存在'
+                }), 404
+
+        except Exception as e:
+            logger.error(f"❌ 添加新技巧失败: {e}", exc_info=True)
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+
     logger.debug("✅ Template group routes registered")
     return bp

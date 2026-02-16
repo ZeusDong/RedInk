@@ -232,6 +232,72 @@ export const useTemplateGroupStore = defineStore('templateGroup', () => {
     return group?.elements.find(e => e.id === elementId)
   }
 
+  async function updateGroup(groupId: string, data: Partial<TemplateGroup>) {
+    try {
+      const response = await fetch(`/api/template-groups/${groupId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      const result = await response.json()
+      if (result.success) {
+        // 更新本地数据
+        const group = groups.value.find(g => g.group_id === groupId)
+        if (group) {
+          Object.assign(group, data)
+        }
+        return true
+      }
+    } catch (error) {
+      console.error('更新模板组失败:', error)
+    }
+    return false
+  }
+
+  async function updateElement(groupId: string, elementId: string, data: Partial<TemplateElement>) {
+    try {
+      const response = await fetch(`/api/template-groups/${groupId}/elements/${elementId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      const result = await response.json()
+      if (result.success) {
+        // 更新本地数据
+        const group = groups.value.find(g => g.group_id === groupId)
+        if (group) {
+          const element = group.elements.find(e => e.id === elementId)
+          if (element) {
+            Object.assign(element, data)
+          }
+        }
+        return true
+      }
+    } catch (error) {
+      console.error('更新技巧失败:', error)
+    }
+    return false
+  }
+
+  async function addElement(groupId: string, data: Omit<TemplateElement, 'id' | 'usage_count' | 'created_at'>) {
+    try {
+      const response = await fetch(`/api/template-groups/${groupId}/elements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      const result = await response.json()
+      if (result.success) {
+        // 重新加载以获取新元素的 ID
+        await loadGroups()
+        return result.data
+      }
+    } catch (error) {
+      console.error('添加技巧失败:', error)
+    }
+    return null
+  }
+
   return {
     // State
     groups,
@@ -253,6 +319,9 @@ export const useTemplateGroupStore = defineStore('templateGroup', () => {
     setSearchQuery,
     setSortBy,
     getGroupById,
-    getElementById
+    getElementById,
+    updateGroup,
+    updateElement,
+    addElement
   }
 })

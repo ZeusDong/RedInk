@@ -1,6 +1,14 @@
 <template>
   <div class="quick-create-page">
     <div class="create-container">
+      <!-- 模板应用成功提示 -->
+      <Transition name="fade">
+        <div v-if="showTemplateApplied" class="template-applied-toast">
+          <span class="icon">✅</span>
+          <span>{{ appliedTemplateInfo }}</span>
+        </div>
+      </Transition>
+
       <!-- 创作输入区 -->
       <div class="composer-section">
         <ComposerInput
@@ -37,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeneratorStore } from '@/stores/generator'
 import ComposerInput from '@/components/home/ComposerInput.vue'
@@ -54,6 +62,8 @@ const topicInput = ref('')
 const generating = ref(false)
 const selectedInsights = ref<AppliedInsight[]>([])
 const insightSelections = ref<Set<string>>(new Set())
+const showTemplateApplied = ref(false)
+const appliedTemplateInfo = ref('')
 
 function handleGenerate() {
   if (!topicInput.value.trim()) return
@@ -133,6 +143,23 @@ function getInsightTitle(insight: AppliedInsight): string {
   }
   return insight.data.title || '对标笔记'
 }
+
+onMounted(() => {
+  // 检查是否有应用的模板
+  if (generatorStore.appliedTemplate) {
+    const { element, group } = generatorStore.appliedTemplate
+
+    // 显示提示
+    showTemplateApplied.value = true
+    appliedTemplateInfo.value = `已应用「${group.source_title}」的「${element.name}」`
+
+    // 3 秒后清除提示和状态
+    setTimeout(() => {
+      showTemplateApplied.value = false
+      generatorStore.clearAppliedTemplate()
+    }, 3000)
+  }
+})
 </script>
 
 <style scoped>
@@ -145,6 +172,38 @@ function getInsightTitle(insight: AppliedInsight): string {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.template-applied-toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: #4caf50;
+  color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.template-applied-toast .icon {
+  font-size: 18px;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 .composer-section {

@@ -49,6 +49,7 @@
           :element="element"
           :group-id="group.group_id"
           @preview="handlePreviewElement"
+          @edit="handleEditElement"
           @apply="handleApplyElement"
           @delete="handleDeleteElement"
         />
@@ -72,7 +73,8 @@ interface Props {
 
 interface Emits {
   (e: 'delete-group', group: TemplateGroup): void
-  (e: 'preview-element', element: TemplateElement): void
+  (e: 'preview-element', element: TemplateElement, groupId: string): void
+  (e: 'edit-element', element: TemplateElement, groupId: string): void
   (e: 'apply-element', element: TemplateElement, groupId: string): void
   (e: 'delete-element', element: TemplateElement, groupId: string): void
 }
@@ -133,7 +135,11 @@ function handleDeleteGroup() {
 }
 
 function handlePreviewElement(element: TemplateElement) {
-  emit('preview-element', element)
+  emit('preview-element', element, props.group.group_id)
+}
+
+function handleEditElement(element: TemplateElement) {
+  emit('edit-element', element, props.group.group_id)
 }
 
 function handleApplyElement(element: TemplateElement) {

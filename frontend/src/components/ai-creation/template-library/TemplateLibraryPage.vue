@@ -19,6 +19,7 @@
         :group="group"
         @delete-group="handleDeleteGroup"
         @preview-element="handlePreviewElement"
+        @edit-element="handleEditElement"
         @apply-element="handleApplyElement"
         @delete-element="handleDeleteElement"
       />
@@ -48,24 +49,43 @@
     <TemplateElementPreview
       v-if="previewElement"
       :element="previewElement"
+      :group-id="previewGroupId"
       :visible="showPreviewModal"
       @close="showPreviewModal = false"
       @apply="handleApplyFromPreview"
+    />
+
+    <!-- 技巧编辑弹窗 -->
+    <TemplateElementEditModal
+      v-if="showEditModal"
+      :element="editingElement"
+      :visible="showEditModal"
+      @close="showEditModal = false"
+      @save="handleSaveElement"
     />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useTemplateGroupStore } from '@/stores/templateGroup'
+import { useGeneratorStore } from '@/stores/generator'
 import TemplateSearchBar from './TemplateSearchBar.vue'
 import TemplateGroupCard from './TemplateGroupCard.vue'
 import TemplateElementPreview from './TemplateElementPreview.vue'
+import TemplateElementEditModal from './TemplateElementEditModal.vue'
 import type { TemplateElement } from '@/types/templateGroup'
 
+const router = useRouter()
 const templateGroupStore = useTemplateGroupStore()
+const generatorStore = useGeneratorStore()
 const previewElement = ref<TemplateElement | null>(null)
+const previewGroupId = ref<string | null>(null)
 const showPreviewModal = ref(false)
+const showEditModal = ref(false)
+const editingElement = ref<TemplateElement | null>(null)
+const editingGroupId = ref<string | null>(null)
 
 async function loadGroups() {
   await templateGroupStore.loadGroups()
@@ -77,15 +97,45 @@ async function handleDeleteGroup(group: any) {
   }
 }
 
-function handlePreviewElement(element: TemplateElement) {
+function handlePreviewElement(element: TemplateElement, groupId: string) {
   previewElement.value = element
+  previewGroupId.value = groupId
   showPreviewModal.value = true
+}
+
+function handleEditElement(element: TemplateElement, groupId: string) {
+  editingElement.value = { ...element }
+  editingGroupId.value = groupId
+  showEditModal.value = true
+}
+
+async function handleSaveElement(data: any) {
+  if (!editingGroupId.value || !editingElement.value) return
+
+  await templateGroupStore.updateElement(
+    editingGroupId.value,
+    editingElement.value.id,
+    data
+  )
+
+  showEditModal.value = false
+  editingElement.value = null
+  editingGroupId.value = null
 }
 
 async function handleApplyElement(element: TemplateElement, groupId: string) {
   await templateGroupStore.applyElement(groupId, element.id)
-  // 这里可以添加应用技巧的逻辑，比如跳转到创作页面
-  alert(`已应用技巧：${element.name}`)
+
+  // 获取完整的 group 对象
+  const group = templateGroupStore.getGroupById(groupId)
+  if (group) {
+    // 更新 generator store
+    generatorStore.applyTemplate(element, group)
+    // 跳转到创作页面
+    router.push({ name: 'QuickCreate' })
+  } else {
+    alert(`已应用技巧：${element.name}`)
+  }
 }
 
 async function handleDeleteElement(element: TemplateElement, groupId: string) {
@@ -94,10 +144,12 @@ async function handleDeleteElement(element: TemplateElement, groupId: string) {
   }
 }
 
-function handleApplyFromPreview(_element: TemplateElement) {
+async function handleApplyFromPreview(element: TemplateElement, groupId: string | null) {
   showPreviewModal.value = false
-  // 需要知道 groupId，这里需要从 store 或其他地方获取
-  // 暂时只关闭弹窗
+  const targetGroupId = groupId || previewGroupId.value
+  if (targetGroupId) {
+    await handleApplyElement(element, targetGroupId)
+  }
 }
 
 onMounted(() => {

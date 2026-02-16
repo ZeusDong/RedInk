@@ -227,10 +227,11 @@ async function handleSave() {
       let content = ''
       const examples: string[] = []
 
-      // 根据类型从 extractedData 获取对应内容
-      if (element.type === 'title' && extractedData.value.title_template) {
+      // 优先使用 element 自身的 content 和 examples（新格式）
+      if (element.content) {
+        content = element.content
+      } else if (element.type === 'title' && extractedData.value.title_template) {
         content = extractedData.value.title_template
-        examples.push(props.record!.title)
       } else if (element.type === 'structure' && extractedData.value.structure_template) {
         content = extractedData.value.structure_template
       } else if (element.type === 'tone' && extractedData.value.tone_style) {
@@ -239,7 +240,14 @@ async function handleSave() {
         content = extractedData.value.cta_type
       }
 
-      // 如果没有具体内容，使用描述作为内容
+      // 使用 element 自身的 examples，或从 extractedData 补充
+      if (element.examples && element.examples.length > 0) {
+        examples.push(...element.examples)
+      } else if (element.type === 'title' && props.record?.title) {
+        examples.push(props.record.title)
+      }
+
+      // 如果还是没有内容，使用 description 作为最后的 fallback
       if (!content) {
         content = element.description
       }

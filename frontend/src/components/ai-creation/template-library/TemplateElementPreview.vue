@@ -73,12 +73,13 @@ import type { TemplateElement } from '@/types/templateGroup'
 
 interface Props {
   element: TemplateElement | null
+  groupId: string | null
   visible: boolean
 }
 
 interface Emits {
   (e: 'close'): void
-  (e: 'apply', element: TemplateElement): void
+  (e: 'apply', element: TemplateElement, groupId: string | null): void
 }
 
 const props = defineProps<Props>()
@@ -101,7 +102,7 @@ function handleClose() {
 
 function handleApply() {
   if (props.element) {
-    emit('apply', props.element)
+    emit('apply', props.element, props.groupId)
   }
 }
 </script>

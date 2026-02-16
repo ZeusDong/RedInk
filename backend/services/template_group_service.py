@@ -263,6 +263,99 @@ class TemplateGroupService:
         logger.info(f"✅ 技巧使用次数+1: {element_id}")
         return True
 
+    def update_group(self, group_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        更新模板组基本信息
+
+        Args:
+            group_id: 模板组ID
+            data: 要更新的字段数据
+
+        Returns:
+            更新后的模板组或None
+        """
+        group = self.groups.get(group_id)
+        if not group:
+            logger.warning(f"⚠️  模板组不存在: {group_id}")
+            return None
+
+        # 更新字段
+        if 'source_title' in data:
+            group['source_title'] = data['source_title']
+        if 'source_industry' in data:
+            group['source_industry'] = data['source_industry']
+        if 'source_cover' in data:
+            group['source_cover'] = data['source_cover']
+
+        self._save_group(group)
+        logger.info(f"✅ 更新模板组: {group_id}")
+        return group
+
+    def update_element(self, group_id: str, element_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        更新单个技巧
+
+        Args:
+            group_id: 模板组ID
+            element_id: 技巧ID
+            data: 要更新的字段数据
+
+        Returns:
+            更新后的技巧或None
+        """
+        group = self.groups.get(group_id)
+        if not group:
+            logger.warning(f"⚠️  模板组不存在: {group_id}")
+            return None
+
+        element = next((e for e in group['elements'] if e['id'] == element_id), None)
+        if not element:
+            logger.warning(f"⚠️  技巧不存在: {element_id}")
+            return None
+
+        # 更新字段
+        updatable_fields = ['name', 'description', 'content', 'examples']
+        for field in updatable_fields:
+            if field in data:
+                element[field] = data[field]
+
+        element['updated_at'] = datetime.now().isoformat()
+        self._save_group(group)
+        logger.info(f"✅ 更新技巧: {element_id}")
+        return element
+
+    def add_element(self, group_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        添加新技巧到分组
+
+        Args:
+            group_id: 模板组ID
+            data: 技巧数据
+
+        Returns:
+            新增的技巧或None
+        """
+        group = self.groups.get(group_id)
+        if not group:
+            logger.warning(f"⚠️  模板组不存在: {group_id}")
+            return None
+
+        element = {
+            'id': str(uuid.uuid4()),
+            'type': data.get('type', 'title'),
+            'name': data.get('name', ''),
+            'description': data.get('description', ''),
+            'content': data.get('content', ''),
+            'examples': data.get('examples', []),
+            'usage_count': 0,
+            'created_at': datetime.now().isoformat()
+        }
+
+        group['elements'].append(element)
+        self._save_group(group)
+        logger.info(f"✅ 添加新技巧: {element['id']} to group {group_id}")
+        return element
+
 
 # 全局服务实例
 _template_group_service: Optional[TemplateGroupService] = None

@@ -6,6 +6,7 @@
  * - 支持历史记录的保存和恢复
  * - 支持本地 localStorage 持久化，防止页面刷新后数据丢失
  * - 支持内容生成（标题、文案、标签）
+ * - 支持模板技巧应用
  *
  * 状态流转：
  * 1. input: 用户输入主题
@@ -15,6 +16,7 @@
  */
 import { defineStore } from 'pinia'
 import type { Page } from '../api'
+import type { TemplateElement, TemplateGroup } from '../types/templateGroup'
 
 /**
  * 生成的图片信息
@@ -36,6 +38,12 @@ export interface GeneratedContent {
   tags: string[]       // 标签列表
   status: 'idle' | 'generating' | 'done' | 'error'  // 生成状态
   error?: string       // 错误信息
+}
+
+export interface AppliedTemplate {
+  element: TemplateElement
+  groupId: string
+  group: TemplateGroup
 }
 
 export interface GeneratorState {
@@ -78,6 +86,9 @@ export interface GeneratorState {
 
   // 最后一次保存到服务器的时间（ISO格式字符串）
   lastSavedAt: string | null
+
+  // 应用的模板技巧
+  appliedTemplate: AppliedTemplate | null
 }
 
 const STORAGE_KEY = 'generator-state'
@@ -109,7 +120,8 @@ function saveState(state: GeneratorState) {
       recordId: state.recordId,              // 历史记录ID
       content: state.content,                // 生成的内容（标题、文案、标签）
       outlineStatus: state.outlineStatus,    // 大纲生成状态
-      lastSavedAt: state.lastSavedAt         // 最后保存时间
+      lastSavedAt: state.lastSavedAt,        // 最后保存时间
+      appliedTemplate: state.appliedTemplate // 应用的模板
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
   } catch (e) {
@@ -164,7 +176,10 @@ export const useGeneratorStore = defineStore('generator', {
       outlineStatus: saved.outlineStatus || 'idle',
 
       // 最后保存时间
-      lastSavedAt: saved.lastSavedAt || null
+      lastSavedAt: saved.lastSavedAt || null,
+
+      // 应用的模板技巧
+      appliedTemplate: saved.appliedTemplate || null
     }
   },
 
@@ -546,6 +561,24 @@ export const useGeneratorStore = defineStore('generator', {
      */
     saveToStorage() {
       saveState(this)
+    },
+
+    /**
+     * 应用模板技巧
+     */
+    applyTemplate(element: TemplateElement, group: TemplateGroup) {
+      this.appliedTemplate = {
+        element,
+        groupId: group.group_id,
+        group
+      }
+    },
+
+    /**
+     * 清除已应用的模板
+     */
+    clearAppliedTemplate() {
+      this.appliedTemplate = null
     }
   }
 })

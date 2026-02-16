@@ -519,6 +519,15 @@ def format_template_extraction_prompt(
 - "提问引导评论，点赞收藏提醒"
 - "投票选择，@好友互动"
 
+### 6. 详细技巧元素（elements）
+为每个类型的技巧提取详细信息，包括：
+- type: 类型（title/structure/tone/cta）
+- name: 技巧名称
+- description: 简短描述（不超过30字）
+- content: 具体的模板内容/模式（这是核心内容，不要为空！）
+- examples: 1-3个实际示例（可以从原笔记中提取或基于原笔记创作）
+- selected: true
+
 ## 输出格式
 请严格按照以下 JSON 格式输出（不要添加任何其他文字）：
 
@@ -532,26 +541,34 @@ def format_template_extraction_prompt(
   "elements": [
     {{
       "type": "title",
-      "name": "标题模板",
+      "name": "标题模板名称",
       "description": "简短描述（不超过30字）",
+      "content": "具体的标题模板，如：{{主题}}的{{数字}}个技巧",
+      "examples": ["男生秋冬棉服的3个搭配技巧", "夏季护肤的5个秘诀"],
       "selected": true
     }},
     {{
       "type": "structure",
       "name": "结构框架",
       "description": "简短描述（不超过30字）",
+      "content": "具体的结构模板，如：痛点提问 → 解决方案 → 分点说明 → 总结互动",
+      "examples": ["你是不是也有这个问题？→ 我来教你解决 → 分3步说明 → 记得点赞收藏"],
       "selected": true
     }},
     {{
       "type": "tone",
       "name": "语言风格",
       "description": "简短描述（不超过30字）",
+      "content": "具体的风格描述，如：亲切闺蜜聊天风格，使用大量表情符号，口语化表达",
+      "examples": ["姐妹们听我说！", "真的绝绝子！"],
       "selected": true
     }},
     {{
       "type": "cta",
       "name": "互动设计",
       "description": "简短描述（不超过30字）",
+      "content": "具体的互动方式，如：提问引导评论，点赞收藏提醒",
+      "examples": ["你觉得呢？评论区告诉我", "点赞收藏不迷路"],
       "selected": true
     }}
   ]
@@ -561,9 +578,11 @@ def format_template_extraction_prompt(
 ## 注意事项
 1. 必须基于分析结果，不要编造
 2. 模板要具有普适性，可以复用到同类内容
-3. 语言要简洁、准确、可操作
-4. JSON 必须有效且符合格式
-5. 如果某个元素无法提炼，可以返回 null 或空字符串
+3. **特别注意：content 字段必须有具体内容，不能为空！**
+4. examples 数组应该包含1-3个实际示例
+5. 语言要简洁、准确、可操作
+6. JSON 必须有效且符合格式
+7. 如果某个元素无法提炼，可以返回 null 或空字符串
 """
     return prompt
 
